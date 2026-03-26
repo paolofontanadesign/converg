@@ -959,7 +959,7 @@ function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debu
   const sub   = debunked
     ? 'These outlets amplified the false claim. Debunking sources are listed separately below.'
     : suspicious
-    ? 'These sources ran the story without sufficient verification. Not victims — they chose to publish.'
+    ? ''
     : 'Sources that covered this story. Publishing is a choice — sorted by how much their verification process is worth trusting.'
 
   return (
