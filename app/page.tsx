@@ -2,160 +2,1125 @@
 
 import { useState } from 'react'
 
-function formatViews(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M views`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K views`
-  if (n > 0) return `${n} views`
-  return ''
-}
-
 const steps = [
   { key: 'metadata', label: 'Metadata extraction', detail: 'Title · timestamp · location signals' },
   { key: 'query', label: 'Corroboration query generation', detail: 'Building footage search variants...' },
   { key: 'sources', label: 'Searching for independent footage', detail: 'YouTube API · scanning for raw footage...' },
   { key: 'analysis', label: 'Corroboration analysis', detail: 'Classifying footage sources · scoring independence' },
+  { key: 'ai', label: 'AI visual analysis', detail: 'Comparing scene thumbnails · synthesising verdict...' },
 ]
 
-function Timeline({ results }: { results: any[] }) {
-  const buckets: Record<number, number> = {}
-  for (let i = -48; i <= 48; i += 6) buckets[i] = 0
-  results.forEach(r => {
-    const bucket = Math.round(r.hoursAfterSource / 6) * 6
-    const key = Math.max(-48, Math.min(48, bucket))
-    buckets[key] = (buckets[key] || 0) + 1
-  })
-  const keys = Object.keys(buckets).map(Number).sort((a, b) => a - b)
-  const max = Math.max(...Object.values(buckets), 1)
+const SOURCE_COLORS = { raw: '#1a6b4a', secondary: '#3a3a38', aggregated: '#c8c8c4' }
+const SOURCE_LABELS = { raw: 'Raw footage', secondary: 'Secondary', aggregated: 'News pkg' }
+const SOURCE_WEIGHTS: Record<string, number> = { raw: 3, secondary: 1.5, aggregated: 0.5 }
+const PLATFORM_LABELS: Record<string, string> = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram' }
 
+const MONO = "'DM Mono', monospace"
+const SANS = "'DM Sans', sans-serif"
+
+const STOP_WORDS = new Set([
+  'the','a','an','in','of','to','and','for','is','on','at','by','from','with','as','its',
+  'this','that','are','was','were','will','not','but','also','after','over','about','more',
+  'live','breaking','watch','video','news','update','full','official','raw','footage',
+  'new','just','now','today','how','why','what','when','who','which','has','have','had',
+  'they','their','there','then','than','into','been','get','got','via','del','der','die',
+  'lors','dans','pour','avec','sont','dont','leur','tout','plus','tres','muy','pero',
+])
+
+// ── Shared tooltip ────────────────────────────────────────────────────────────
+
+type Tip = { x: number; y: number; lines: string[] }
+
+function ChartTooltip({ tip }: { tip: Tip | null }) {
+  if (!tip) return null
   return (
-    <div style={{ borderTop: '1px solid #edeae3', paddingTop: '40px', marginBottom: '48px' }}>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>Footage timeline</p>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#888680', marginBottom: '28px' }}>Distribution of independent footage across the 96h window around the source video</p>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '120px', marginBottom: '8px' }}>
-        {keys.map(k => (
-          <div key={k} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-            <div style={{
-              width: '100%',
-              background: k === 0 ? '#c8472a' : k < 0 ? '#888680' : '#1a6b4a',
-              height: `${(buckets[k] / max) * 100}px`,
-              minHeight: buckets[k] > 0 ? '6px' : '0',
-              transition: 'height 0.6s ease'
-            }} />
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680' }}>
-        <span>−48h</span>
-        <span style={{ color: '#c8472a' }}>source video</span>
-        <span>+48h</span>
-      </div>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: '#888680', marginTop: '12px' }}>
-        Footage published before the source video suggests the event was real and already being captured independently before this upload.
-      </p>
-      <div style={{ display: 'flex', gap: '20px', marginTop: '16px' }}>
-        {[{ color: '#888680', label: 'Footage before source' }, { color: '#c8472a', label: 'Source video' }, { color: '#1a6b4a', label: 'Footage after source' }].map(item => (
-          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '10px', height: '10px', background: item.color }} />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680' }}>{item.label}</span>
-          </div>
-        ))}
-      </div>
+    <div style={{
+      position: 'fixed', left: tip.x + 14, top: tip.y - 12,
+      background: '#0f0f0e', padding: '7px 11px',
+      pointerEvents: 'none', zIndex: 9999,
+      boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
+    }}>
+      {tip.lines.map((l, i) => (
+        <div key={i} style={{ fontFamily: MONO, fontSize: '11px', lineHeight: '1.6', color: i === 0 ? '#f7f4ef' : '#888680' }}>{l}</div>
+      ))}
     </div>
   )
 }
 
-function UploadTiming({ results }: { results: any[] }) {
+// ── Shared section header ─────────────────────────────────────────────────────
+
+function ChartHeader({ title, sub }: { title: string; sub: string }) {
+  return (
+    <>
+      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>{title}</p>
+      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '24px' }}>{sub}</p>
+    </>
+  )
+}
+
+// ── Chart 1: Cumulative corroboration score over time ────────────────────────
+
+function CorroborationBuildup({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
   const sorted = [...results].sort((a, b) => a.hoursAfterSource - b.hoursAfterSource)
-  const max = Math.max(...sorted.map(r => Math.abs(r.hoursAfterSource)), 1)
+  const W = 620, H = 180, pL = 56, pR = 24, pT = 36, pB = 36
+  const xMin = -48, xMax = 48, plotW = W - pL - pR, plotH = H - pT - pB
+  const xS = (h: number) => pL + ((h - xMin) / (xMax - xMin)) * plotW
+  const totalScore = sorted.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
+  const yMax = Math.max(totalScore, 6, 0.1)
+  const yS = (s: number) => H - pB - (s / yMax) * plotH
+
+  // Build step path + collect event points
+  const pts: [number, number][] = [[xMin, 0]]
+  const events: { h: number; score: number; r: any }[] = []
+  let cum = 0
+  for (const r of sorted) {
+    const h = Math.max(xMin, Math.min(xMax, r.hoursAfterSource))
+    pts.push([h, cum])
+    cum += SOURCE_WEIGHTS[r.sourceType] ?? 1
+    pts.push([h, cum])
+    events.push({ h, score: cum, r })
+  }
+  pts.push([xMax, cum])
+
+  const d = pts.map(([h, s], i) => `${i === 0 ? 'M' : 'L'}${xS(h).toFixed(1)},${yS(s).toFixed(1)}`).join(' ')
+  const fill = d + ` L${xS(xMax).toFixed(1)},${yS(0).toFixed(1)} L${xS(xMin).toFixed(1)},${yS(0).toFixed(1)} Z`
+  const x0 = xS(0)
+  const showPartial = yMax >= 2
+  const showCorr = yMax >= 6
 
   return (
-    <div style={{ borderTop: '1px solid #edeae3', paddingTop: '40px', marginBottom: '48px' }}>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>Upload timing</p>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#888680', marginBottom: '8px' }}>Hours between each footage source and the source video</p>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: '#888680', marginBottom: '28px' }}>Sources uploaded independently and close in time — especially before — are the strongest corroboration signal.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {sorted.map((r, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#3a3a38', width: '120px', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.channel}</span>
-            <div style={{ flex: 1, height: '8px', background: '#edeae3', position: 'relative' }}>
-              <div style={{
-                position: 'absolute',
-                left: r.hoursAfterSource >= 0 ? '0%' : `${50 - (Math.abs(r.hoursAfterSource) / max) * 50}%`,
-                width: `${(Math.abs(r.hoursAfterSource) / max) * 100}%`,
-                height: '8px',
-                background: r.hoursAfterSource < 0 ? '#888680' : '#1a6b4a',
-                transition: 'width 0.6s ease'
-              }} />
-            </div>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: r.hoursAfterSource < 0 ? '#888680' : '#1a6b4a', width: '40px', textAlign: 'right', flexShrink: 0 }}>
-              {r.hoursAfterSource > 0 ? '+' : ''}{r.hoursAfterSource}h
-            </span>
+    <div style={{}}>
+      <ChartHeader title="Corroboration buildup" sub="Cumulative corroboration score as independent footage accumulates. Each step up is a new source." />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+        {/* threshold bands */}
+        {showCorr && <rect x={pL} y={pT} width={plotW} height={yS(6) - pT} fill="rgba(26,107,74,0.04)" />}
+        {/* grid */}
+        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
+        {showPartial && <line x1={pL} y1={yS(2)} x2={W - pR} y2={yS(2)} stroke="#888680" strokeWidth="0.75" strokeDasharray="4,4" />}
+        {showCorr && <line x1={pL} y1={yS(6)} x2={W - pR} y2={yS(6)} stroke="#1a6b4a" strokeWidth="0.75" strokeDasharray="4,4" />}
+        {/* source video line */}
+        <line x1={x0} y1={pT} x2={x0} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" />
+        <text x={x0} y={pT - 8} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>source</text>
+        {/* area fill */}
+        <path d={fill} fill="#0f0f0e" opacity="0.05" />
+        {/* score line */}
+        <path d={d} fill="none" stroke="#0f0f0e" strokeWidth="2" strokeLinejoin="round" />
+        {/* threshold labels — full size, left-anchored */}
+        {showPartial && (
+          <>
+            <rect x={pL} y={yS(2) - 14} width={58} height={16} fill="#f7f4ef" />
+            <text x={pL + 4} y={yS(2) - 3} fontSize="10" fill="#888680" fontFamily={MONO}>partial</text>
+          </>
+        )}
+        {showCorr && (
+          <>
+            <rect x={pL} y={yS(6) - 14} width={86} height={16} fill="#f7f4ef" />
+            <text x={pL + 4} y={yS(6) - 3} fontSize="10" fill="#1a6b4a" fontFamily={MONO} fontWeight="600">corroborated</text>
+          </>
+        )}
+        {/* Y axis ticks */}
+        {showPartial && <text x={pL - 6} y={yS(2) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>2</text>}
+        {showCorr && <text x={pL - 6} y={yS(6) + 4} textAnchor="end" fontSize="10" fill="#1a6b4a" fontFamily={MONO}>6</text>}
+        <text x={pL - 6} y={yS(0) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>0</text>
+        {/* X axis labels */}
+        <text x={pL} y={H - 10} textAnchor="middle" fontSize="10" fill="#888680" fontFamily={MONO}>−48h</text>
+        <text x={x0} y={H - 10} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>0</text>
+        <text x={W - pR} y={H - 10} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>+48h</text>
+        {/* event dots — colored by sourceType, hoverable */}
+        {events.map(({ h, score, r }, i) => (
+          <circle
+            key={i}
+            cx={xS(h)} cy={yS(score)} r={6}
+            fill={SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'}
+            stroke="#f7f4ef" strokeWidth="1.5"
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={e => show(e, [
+              r.channel,
+              `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]} · +${SOURCE_WEIGHTS[r.sourceType]}pts`,
+              `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source · score → ${score.toFixed(1)}`,
+            ])}
+            onMouseMove={move}
+            onMouseLeave={hide}
+          />
+        ))}
+      </svg>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 2: Source type swim lanes × time ───────────────────────────────────
+
+function SwimLanes({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const W = 620, laneH = 64, pL = 100, pR = 24, pT = 16, pB = 36
+  const xMin = -48, xMax = 48, plotW = W - pL - pR
+  const lanes = ['raw', 'secondary', 'aggregated'] as const
+  const totalH = pT + lanes.length * laneH + pB
+  const xS = (h: number) => pL + ((Math.max(xMin, Math.min(xMax, h)) - xMin) / (xMax - xMin)) * plotW
+  const x0 = xS(0)
+
+  // Tick marks every 12h
+  const ticks = [-48, -36, -24, -12, 0, 12, 24, 36, 48]
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Source independence × time" sub="Each dot is a footage source positioned by upload time. Raw footage before the red line (source video) is the strongest corroboration signal." />
+      <svg viewBox={`0 0 ${W} ${totalH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* vertical tick grid */}
+        {ticks.map(t => (
+          <line key={t} x1={xS(t)} y1={pT} x2={xS(t)} y2={totalH - pB} stroke={t === 0 ? 'rgba(200,71,42,0.15)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
+        ))}
+        {/* lanes */}
+        {lanes.map((lane, li) => {
+          const y = pT + li * laneH
+          const laneResults = results.filter(r => r.sourceType === lane)
+          const count = laneResults.length
+          return (
+            <g key={lane}>
+              <rect x={pL} y={y + 8} width={plotW} height={laneH - 18} fill={li % 2 === 0 ? '#f7f4ef' : '#f2efe9'} rx="2" />
+              {/* lane label + count */}
+              <text x={pL - 10} y={y + laneH / 2 - 5} textAnchor="end" fontSize="11" fill={SOURCE_COLORS[lane]} fontFamily={MONO} fontWeight="600">{SOURCE_LABELS[lane]}</text>
+              <text x={pL - 10} y={y + laneH / 2 + 9} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{count} source{count !== 1 ? 's' : ''}</text>
+              {/* dots */}
+              {laneResults.map((r, i) => (
+                <circle
+                  key={i}
+                  cx={xS(r.hoursAfterSource)} cy={y + laneH / 2}
+                  r={7}
+                  fill={SOURCE_COLORS[lane]}
+                  opacity={0.88}
+                  stroke="#f7f4ef" strokeWidth="1.5"
+                  style={{ cursor: 'pointer' }}
+                  onMouseEnter={e => show(e, [
+                    r.channel,
+                    `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[lane as keyof typeof SOURCE_LABELS]}`,
+                    `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source`,
+                  ])}
+                  onMouseMove={move}
+                  onMouseLeave={hide}
+                />
+              ))}
+            </g>
+          )
+        })}
+        {/* source line on top */}
+        <line x1={x0} y1={pT} x2={x0} y2={totalH - pB} stroke="#c8472a" strokeWidth="1.5" strokeDasharray="4,3" />
+        {/* x axis */}
+        <line x1={pL} y1={totalH - pB} x2={W - pR} y2={totalH - pB} stroke="#edeae3" strokeWidth="1" />
+        {ticks.map(t => (
+          <text key={t} x={xS(t)} y={totalH - pB + 16} textAnchor="middle" fontSize="10" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
+            {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t}h`}
+          </text>
+        ))}
+      </svg>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 3: Score composition breakdown ─────────────────────────────────────
+
+function ScoreAnatomy({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const segments = [
+    { key: 'raw', label: 'Raw footage', weight: 3, color: '#1a6b4a' },
+    { key: 'secondary', label: 'Secondary source', weight: 1.5, color: '#3a3a38' },
+    { key: 'aggregated', label: 'News package', weight: 0.5, color: '#c8c8c4' },
+  ].map(s => ({
+    ...s,
+    count: results.filter(r => r.sourceType === s.key).length,
+    score: results.filter(r => r.sourceType === s.key).length * s.weight,
+  })).filter(s => s.count > 0)
+
+  const total = segments.reduce((s, seg) => s + seg.score, 0)
+  if (total === 0) return null
+  const pct = (n: number) => `${Math.round((n / total) * 100)}%`
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Score anatomy" sub="Raw footage contributes 6× more than a news package — outlets report without independently verifying." />
+      {/* stacked bar */}
+      <div style={{ height: '28px', display: 'flex', gap: '2px', marginBottom: '28px', borderRadius: '1px', overflow: 'hidden' }}>
+        {segments.map(s => (
+          <div
+            key={s.key}
+            style={{ width: `${(s.score / total) * 100}%`, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'default', transition: 'opacity 0.15s' }}
+            onMouseEnter={e => show(e, [`${s.label}`, `${s.count} source${s.count > 1 ? 's' : ''} × ${s.weight}pts = ${s.score.toFixed(1)}`, `${pct(s.score)} of total score`])}
+            onMouseMove={move}
+            onMouseLeave={hide}
+          >
+            {(s.score / total) > 0.12 && (
+              <span style={{ fontFamily: MONO, fontSize: '10px', color: s.key === 'aggregated' ? '#888680' : 'white', fontWeight: '600' }}>{s.score.toFixed(1)}</span>
+            )}
           </div>
         ))}
+      </div>
+      {/* rows */}
+      {segments.map(s => (
+        <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderBottom: '1px solid #f0ede6' }}>
+          <div style={{ width: '14px', height: '14px', background: s.color, flexShrink: 0, border: s.key === 'aggregated' ? '1px solid #b0b0a8' : 'none' }} />
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', flex: 1 }}>{s.label}</span>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{s.count} × {s.weight} pts</span>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', width: '40px', textAlign: 'right' }}>{pct(s.score)}</span>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', width: '36px', textAlign: 'right', fontWeight: '600' }}>{s.score.toFixed(1)}</span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '20px', paddingTop: '12px' }}>
+        <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>Total corroboration score</span>
+        <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', fontWeight: '600' }}>{total.toFixed(1)}</span>
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 4: Language × time witness matrix ──────────────────────────────────
+
+function WitnessMatrix({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const buckets = [-48, -36, -24, -12, 0, 12, 24, 36]
+  const getBucket = (h: number) => Math.max(-48, Math.min(36, Math.floor(h / 12) * 12))
+  const languages = [...new Set(results.map(r => r.language))].sort()
+  if (languages.length === 0) return null
+
+  const matrix: Record<string, Record<number, number>> = {}
+  for (const lang of languages) {
+    matrix[lang] = {}
+    for (const b of buckets) matrix[lang][b] = 0
+  }
+  for (const r of results) {
+    const b = getBucket(r.hoursAfterSource)
+    if (matrix[r.language]) matrix[r.language][b]++
+  }
+  const maxCount = Math.max(...languages.flatMap(l => buckets.map(b => matrix[l][b])), 1)
+
+  const bucketLabel = (b: number) => b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}h`
+  const bucketRange = (b: number) => `${bucketLabel(b)} → ${bucketLabel(b + 12)}`
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Witness spread" sub="Independent footage across language communities and time windows. Broader spread = broader independent witnessing." />
+      {/* column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '80px repeat(8, 1fr)', gap: '3px', marginBottom: '4px' }}>
+        <div />
+        {buckets.map(b => (
+          <div key={b} style={{ fontFamily: MONO, fontSize: '10px', color: b === 0 ? '#c8472a' : '#888680', textAlign: 'center', fontWeight: b === 0 ? '600' : '400' }}>
+            {b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}`}
+          </div>
+        ))}
+      </div>
+      {/* rows */}
+      {languages.map(lang => (
+        <div key={lang} style={{ display: 'grid', gridTemplateColumns: '80px repeat(8, 1fr)', gap: '3px', marginBottom: '3px' }}>
+          <div style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', textTransform: 'uppercase', display: 'flex', alignItems: 'center' }}>{lang}</div>
+          {buckets.map(b => {
+            const count = matrix[lang][b]
+            const intensity = count / maxCount
+            return (
+              <div
+                key={b}
+                style={{
+                  height: '32px',
+                  background: count > 0 ? `rgba(26,107,74,${0.12 + intensity * 0.88})` : '#f7f4ef',
+                  border: b === 0 ? '1px solid rgba(200,71,42,0.3)' : '1px solid transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: count > 0 ? 'default' : 'default',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={e => count > 0 && show(e, [
+                  `${lang.toUpperCase()} · ${bucketRange(b)}`,
+                  `${count} source${count > 1 ? 's' : ''}`,
+                ])}
+                onMouseMove={move}
+                onMouseLeave={hide}
+              >
+                {count > 0 && (
+                  <span style={{ fontFamily: MONO, fontSize: '11px', fontWeight: '600', color: intensity > 0.5 ? 'white' : '#1a6b4a' }}>{count}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '10px', textAlign: 'right' }}>
+        each column = 12h window · 0 = source video upload time
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 5: Upload velocity histogram ───────────────────────────────────────
+
+function VelocityHistogram({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const W = 620, H = 160, pL = 36, pR = 16, pT = 16, pB = 40
+  const plotW = W - pL - pR, plotH = H - pT - pB
+  const bucketDefs = [-48, -36, -24, -12, 0, 12, 24, 36]
+  const getBucket = (h: number) => Math.floor(Math.max(-48, Math.min(36, h)) / 12) * 12
+
+  const data = bucketDefs.map(b => {
+    const raw = results.filter(r => getBucket(r.hoursAfterSource) === b && r.sourceType === 'raw').length
+    const secondary = results.filter(r => getBucket(r.hoursAfterSource) === b && r.sourceType === 'secondary').length
+    const aggregated = results.filter(r => getBucket(r.hoursAfterSource) === b && r.sourceType === 'aggregated').length
+    return { b, raw, secondary, aggregated, total: raw + secondary + aggregated }
+  })
+  const maxTotal = Math.max(...data.map(d => d.total), 1)
+  const slotW = plotW / bucketDefs.length
+  const barW = slotW - 6
+  const xCenter = (i: number) => pL + (i + 0.5) * slotW
+  const yH = (count: number) => (count / maxTotal) * plotH
+  const yTicks = Array.from({ length: Math.min(maxTotal, 4) }, (_, i) => i + 1)
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Upload velocity" sub="Footage sources appearing per 12-hour window. A sharp spike before the source line may indicate coordinated activity." />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
+        {yTicks.map(tick => (
+          <line key={tick} x1={pL} y1={H - pB - yH(tick)} x2={W - pR} y2={H - pB - yH(tick)} stroke="#edeae3" strokeWidth="0.5" strokeDasharray="3,3" />
+        ))}
+        <line x1={xCenter(4)} y1={pT} x2={xCenter(4)} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" opacity="0.7" />
+        {data.map((d, i) => {
+          const cx = xCenter(i)
+          const x = cx - barW / 2
+          const segs = [
+            { key: 'raw', count: d.raw, color: SOURCE_COLORS.raw },
+            { key: 'secondary', count: d.secondary, color: SOURCE_COLORS.secondary },
+            { key: 'aggregated', count: d.aggregated, color: SOURCE_COLORS.aggregated },
+          ]
+          let yOffset = H - pB
+          return (
+            <g key={d.b} style={{ cursor: d.total > 0 ? 'pointer' : 'default' }}
+               onMouseEnter={e => d.total > 0 && show(e, [
+                 `${d.b >= 0 ? '+' : ''}${d.b}h → ${d.b >= 0 ? '+' : ''}${d.b + 12}h`,
+                 `${d.total} source${d.total !== 1 ? 's' : ''}`,
+                 ...(d.raw > 0 ? [`Raw footage: ${d.raw}`] : []),
+                 ...(d.secondary > 0 ? [`Secondary: ${d.secondary}`] : []),
+                 ...(d.aggregated > 0 ? [`News pkg: ${d.aggregated}`] : []),
+               ])}
+               onMouseMove={move} onMouseLeave={hide}
+            >
+              {segs.map(s => {
+                if (s.count === 0) return null
+                const h = yH(s.count)
+                yOffset -= h
+                return <rect key={s.key} x={x} y={yOffset} width={barW} height={h} fill={s.color} />
+              })}
+            </g>
+          )
+        })}
+        {bucketDefs.map((b, i) => (
+          <text key={b} x={xCenter(i)} y={H - pB + 16} textAnchor="middle" fontSize="10" fill={b === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
+            {b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}`}
+          </text>
+        ))}
+        {yTicks.map(tick => (
+          <text key={tick} x={pL - 6} y={H - pB - yH(tick) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{tick}</text>
+        ))}
+      </svg>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 6: Platform spread ──────────────────────────────────────────────────
+
+function PlatformBreakdown({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const platforms = [
+    { key: 'youtube', label: 'YouTube', barColor: '#c8472a' },
+    { key: 'tiktok', label: 'TikTok', barColor: '#0f0f0e' },
+    { key: 'instagram', label: 'Instagram', barColor: '#9b59b6' },
+  ]
+
+  const data = platforms.map(p => {
+    const items = results.filter(r => (r.platform ?? 'youtube') === p.key)
+    const score = items.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
+    const rawPts = items.filter(r => r.sourceType === 'raw').length * 3
+    const secPts = items.filter(r => r.sourceType === 'secondary').length * 1.5
+    const aggPts = items.filter(r => r.sourceType === 'aggregated').length * 0.5
+    return { ...p, items, score, rawPts, secPts, aggPts }
+  }).filter(p => p.items.length > 0)
+
+  if (data.length <= 1) return null
+
+  const maxScore = Math.max(...data.map(d => d.score), 0.1)
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Platform spread" sub="Finding the same scene independently on multiple platforms is the strongest possible corroboration signal." />
+      {data.map(p => (
+        <div key={p.key} style={{ display: 'grid', gridTemplateColumns: '96px 1fr 56px', gap: '16px', alignItems: 'center', marginBottom: '14px' }}>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', fontWeight: '600', textAlign: 'right' }}>{p.label}</span>
+          <div style={{ height: '22px', background: '#f7f4ef', position: 'relative', overflow: 'hidden', cursor: 'default' }}
+               onMouseEnter={e => show(e, [
+                 p.label,
+                 `${p.items.length} source${p.items.length !== 1 ? 's' : ''} · score ${p.score.toFixed(1)}`,
+                 ...(p.rawPts > 0 ? [`Raw footage: ${p.rawPts.toFixed(1)}pts`] : []),
+                 ...(p.secPts > 0 ? [`Secondary: ${p.secPts.toFixed(1)}pts`] : []),
+                 ...(p.aggPts > 0 ? [`News pkg: ${p.aggPts.toFixed(1)}pts`] : []),
+               ])}
+               onMouseMove={move} onMouseLeave={hide}
+          >
+            <div style={{ height: '100%', width: `${(p.score / maxScore) * 100}%`, background: p.barColor, transition: 'width 0.6s ease' }} />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{p.score.toFixed(1)}pts</span>
+        </div>
+      ))}
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 7: Reach × timing scatter ──────────────────────────────────────────
+
+function ReachBubbles({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const withViews = results.filter(r => r.viewCount > 0)
+  if (withViews.length === 0) return null
+
+  const W = 620, H = 160, pL = 56, pR = 24, pT = 16, pB = 40
+  const plotW = W - pL - pR, plotH = H - pT - pB
+  const xMin = -48, xMax = 48
+  const maxViews = Math.max(...withViews.map(r => r.viewCount))
+  const xS = (h: number) => pL + ((Math.max(xMin, Math.min(xMax, h)) - xMin) / (xMax - xMin)) * plotW
+  const yS = (v: number) => H - pB - (Math.log(v + 1) / Math.log(maxViews + 1)) * plotH
+  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n)
+  const ticks = [-48, -24, 0, 24, 48]
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Reach × timing" sub="View counts of corroborating sources plotted against upload time. High-reach raw footage before the source line is the strongest signal." />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
+        {ticks.map(t => (
+          <line key={t} x1={xS(t)} y1={pT} x2={xS(t)} y2={H - pB} stroke={t === 0 ? 'rgba(200,71,42,0.15)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
+        ))}
+        <line x1={xS(0)} y1={pT} x2={xS(0)} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" />
+        {withViews.map((r, i) => (
+          <circle key={i}
+            cx={xS(r.hoursAfterSource)} cy={yS(r.viewCount)}
+            r={SOURCE_WEIGHTS[r.sourceType] * 3 + 2}
+            fill={SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'}
+            opacity={0.82}
+            stroke="#f7f4ef" strokeWidth="1.5"
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={e => show(e, [
+              r.channel,
+              `${fmt(r.viewCount)} views`,
+              `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]}`,
+              `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source`,
+            ])}
+            onMouseMove={move} onMouseLeave={hide}
+          />
+        ))}
+        {ticks.map(t => (
+          <text key={t} x={xS(t)} y={H - pB + 16} textAnchor="middle" fontSize="10" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
+            {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t}h`}
+          </text>
+        ))}
+        <text x={pL - 6} y={pT + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{fmt(maxViews)}</text>
+        <text x={pL - 6} y={H - pB + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>0</text>
+      </svg>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 8: Keyword consensus ────────────────────────────────────────────────
+
+function KeywordFrequency({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length === 0) return null
+
+  const freq: Record<string, number> = {}
+  for (const r of results) {
+    const words = r.title.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/)
+    for (const w of words) {
+      if (w.length < 4) continue
+      const lower = w.toLowerCase()
+      if (STOP_WORDS.has(lower)) continue
+      freq[lower] = (freq[lower] ?? 0) + 1
+    }
+  }
+
+  const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8)
+  if (top.length === 0) return null
+
+  const maxFreq = top[0][1]
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Keyword consensus" sub="Most frequent words across corroborating titles. High overlap means independent sources describe the same event in similar terms." />
+      {top.map(([word, count], i) => (
+        <div key={word} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 32px', gap: '16px', alignItems: 'center', marginBottom: '10px', cursor: 'default' }}
+             onMouseEnter={e => show(e, [word, `${count} title${count !== 1 ? 's' : ''}`, `${Math.round((count / results.length) * 100)}% of sources`])}
+             onMouseMove={move} onMouseLeave={hide}
+        >
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{word}</span>
+          <div style={{ height: '16px', background: '#f7f4ef', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(count / maxFreq) * 100}%`, background: i === 0 ? '#0f0f0e' : '#3a3a38', opacity: Math.max(1 - i * 0.07, 0.35), transition: 'width 0.5s ease' }} />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680' }}>{count}×</span>
+        </div>
+      ))}
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 9: Corroboration profile radar ─────────────────────────────────────
+
+function DiversityRadar({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length === 0) return null
+
+  const totalScore = results.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
+  const rawScore = results.filter(r => r.sourceType === 'raw').length * 3
+  const platforms = new Set(results.map(r => r.platform ?? 'youtube')).size
+  const langs = new Set(results.map(r => r.language).filter(l => l && l !== 'undetected')).size
+  const hrs = results.map(r => r.hoursAfterSource)
+  const spread = hrs.length > 1 ? Math.max(...hrs) - Math.min(...hrs) : 0
+  const totalViews = results.reduce((s, r) => s + (r.viewCount ?? 0), 0)
+  const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
+
+  const axes = [
+    { label: 'Purity', desc: `${Math.round(totalScore > 0 ? (rawScore/totalScore)*100 : 0)}% of score from raw footage`, value: totalScore > 0 ? rawScore / totalScore : 0 },
+    { label: 'Platforms', desc: `${platforms} of 3 platforms covered`, value: Math.min(platforms / 3, 1) },
+    { label: 'Languages', desc: `${langs} language${langs !== 1 ? 's' : ''} detected`, value: Math.min(langs / 5, 1) },
+    { label: 'Spread', desc: `${spread}h between earliest and latest`, value: Math.min(spread / 48, 1) },
+    { label: 'Reach', desc: totalViews > 0 ? `${fmtV(totalViews)} total views` : 'No view data', value: totalViews > 0 ? Math.min(Math.log(totalViews + 1) / Math.log(10_000_000), 1) : 0 },
+  ]
+
+  const N = 5, SIZE = 260, CX = 130, CY = 130, R = 88
+  const angle = (i: number) => (i / N) * Math.PI * 2 - Math.PI / 2
+  const pt = (i: number, v: number): [number, number] => [CX + Math.cos(angle(i)) * R * v, CY + Math.sin(angle(i)) * R * v]
+  const polyStr = (v: number) => Array.from({ length: N }, (_, i) => pt(i, v).join(',')).join(' ')
+  const dataStr = axes.map((a, i) => pt(i, a.value).join(',')).join(' ')
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Corroboration profile" sub="Five-dimensional view of corroboration quality. Fuller polygon = stronger, more diverse signal." />
+      <div style={{ display: 'flex', gap: '40px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: '220px', height: '220px', flexShrink: 0 }}>
+          {[0.25, 0.5, 0.75, 1].map(level => (
+            <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 1 : 0.5} />
+          ))}
+          {Array.from({ length: N }, (_, i) => {
+            const [x, y] = pt(i, 1)
+            return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#edeae3" strokeWidth="0.5" />
+          })}
+          <polygon points={dataStr} fill="rgba(26,107,74,0.14)" stroke="#1a6b4a" strokeWidth="1.5" strokeLinejoin="round" />
+          {axes.map((a, i) => {
+            const [x, y] = pt(i, a.value)
+            return (
+              <circle key={i} cx={x} cy={y} r={4} fill="#1a6b4a" style={{ cursor: 'pointer' }}
+                onMouseEnter={e => show(e, [a.label, a.desc, `Score: ${Math.round(a.value * 100)}%`])}
+                onMouseMove={move} onMouseLeave={hide}
+              />
+            )
+          })}
+          {axes.map((a, i) => {
+            const ang = angle(i)
+            const lx = CX + Math.cos(ang) * (R + 18)
+            const ly = CY + Math.sin(ang) * (R + 18)
+            const anchor = Math.abs(Math.cos(ang)) < 0.15 ? 'middle' : Math.cos(ang) > 0 ? 'start' : 'end'
+            return <text key={i} x={lx} y={ly + 4} textAnchor={anchor} fontSize="10" fill="#888680" fontFamily={MONO}>{a.label}</text>
+          })}
+        </svg>
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          {axes.map(a => (
+            <div key={a.label} style={{ padding: '9px 0', borderBottom: '1px solid #f0ede6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e' }}>{a.label}</span>
+                <span style={{ fontFamily: MONO, fontSize: '11px', color: '#1a6b4a', fontWeight: '600' }}>{Math.round(a.value * 100)}%</span>
+              </div>
+              <div style={{ height: '3px', background: '#f0ede6' }}>
+                <div style={{ height: '100%', width: `${a.value * 100}%`, background: '#1a6b4a', transition: 'width 0.5s ease' }} />
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '3px' }}>{a.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 10: First witnesses chain ──────────────────────────────────────────
+
+function WitnessChain({ results }: { results: any[] }) {
+  if (results.length === 0) return null
+
+  const sorted = [...results].sort((a, b) => a.hoursAfterSource - b.hoursAfterSource).slice(0, 6)
+  const hasVisual = sorted.some(r => r.visualScore !== null)
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="First witnesses" sub="Earliest independent sources in chronological order. Raw footage from unknown channels before the source video is the strongest signal." />
+      <div style={{ display: 'flex', overflowX: 'auto', paddingBottom: '4px', gap: '0' }}>
+        {sorted.map((r, i) => {
+          const color = SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'
+          const vs: number | null = r.visualScore
+          const vsColor = vs === null ? '#888680' : vs >= 7 ? '#1a6b4a' : vs >= 4 ? '#888680' : '#c8c8c4'
+          return (
+            <div key={r.id} style={{ flex: '0 0 auto', width: '190px', borderLeft: `3px solid ${color}`, paddingLeft: '14px', paddingRight: '20px' }}>
+              <div style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.1em', color, marginBottom: '8px' }}>
+                #{i + 1} · {SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]}
+              </div>
+              <div style={{ fontFamily: SANS, fontSize: '12px', color: '#0f0f0e', lineHeight: 1.4, marginBottom: '8px', maxHeight: '54px', overflow: 'hidden' }}>
+                {r.title.length > 72 ? r.title.slice(0, 69) + '…' : r.title}
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginBottom: '2px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</div>
+              <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginBottom: '10px' }}>
+                {r.hoursAfterSource > 0 ? '+' : ''}{r.hoursAfterSource}h · {PLATFORM_LABELS[r.platform] ?? 'YouTube'}
+              </div>
+              {hasVisual && (
+                <div style={{ marginBottom: '10px' }}>
+                  {vs !== null ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ flex: 1, height: '3px', background: '#edeae3' }}>
+                        <div style={{ height: '100%', width: `${vs * 10}%`, background: vsColor, transition: 'width 0.5s ease' }} />
+                      </div>
+                      <span style={{ fontFamily: MONO, fontSize: '9px', color: vsColor, fontWeight: '600' }}>{vs}/10</span>
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: MONO, fontSize: '9px', color: '#c8c8c4' }}>no visual score</div>
+                  )}
+                </div>
+              )}
+              <a href={r.url} target="_blank" rel="noopener noreferrer"
+                 style={{ fontFamily: MONO, fontSize: '9px', color, textDecoration: 'none', letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: `1px solid ${color}`, paddingBottom: '1px' }}>
+                Watch →
+              </a>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function SourceIndependence({ results }: { results: any[] }) {
-  const counts = { raw: 0, secondary: 0, aggregated: 0 }
-  results.forEach(r => { counts[r.sourceType as keyof typeof counts]++ })
-  const total = results.length || 1
-  const colors = { raw: '#1a6b4a', secondary: '#3a3a38', aggregated: '#c8c8c4' }
-  const labels = { raw: 'Raw footage', secondary: 'Secondary source', aggregated: 'News package' }
+// ── Chart 13: Visual similarity scores ───────────────────────────────────────
+
+function VisualMatchChart({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  const scored = results.filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
+  if (scored.length === 0) return null
+
+  const sorted = [...scored].sort((a, b) => b.visualScore - a.visualScore)
+  const vsColor = (v: number) => v >= 7 ? '#1a6b4a' : v >= 4 ? '#888680' : '#c8c8c4'
+  const vsLabel = (v: number) => v >= 7 ? 'High visual match' : v >= 4 ? 'Partial match' : 'Low match'
 
   return (
-    <div style={{ borderTop: '1px solid #edeae3', paddingTop: '40px', marginBottom: '48px' }}>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>Source independence</p>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#888680', marginBottom: '28px' }}>Raw footage from unknown channels is stronger corroboration than a news package — outlets can report without verifying</p>
-      <div style={{ height: '20px', display: 'flex', marginBottom: '20px', gap: '2px' }}>
-        {(['raw', 'secondary', 'aggregated'] as const).map(type =>
-          counts[type] > 0 ? (
-            <div key={type} style={{ width: `${(counts[type] / total) * 100}%`, background: colors[type], transition: 'width 0.6s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', color: type === 'aggregated' ? '#888680' : 'white', opacity: 0.9 }}>{counts[type]}</span>
+    <div style={{}}>
+      <ChartHeader title="Visual similarity" sub="AI vision score (0–10) comparing each source thumbnail to the reference scene. High scores indicate the same physical location was filmed." />
+      {sorted.map(r => (
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '180px 1fr 48px', gap: '14px', alignItems: 'center', marginBottom: '12px', cursor: 'default' }}
+             onMouseEnter={e => show(e, [r.channel, vsLabel(r.visualScore), `${r.visualScore}/10 visual similarity`, SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]])}
+             onMouseMove={move} onMouseLeave={hide}
+        >
+          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textAlign: 'right', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</span>
+          <div style={{ height: '18px', background: '#f7f4ef', overflow: 'hidden', position: 'relative' }}>
+            <div style={{ height: '100%', width: `${r.visualScore * 10}%`, background: vsColor(r.visualScore), transition: 'width 0.6s ease' }} />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: vsColor(r.visualScore), fontWeight: '600', textAlign: 'right' }}>{r.visualScore}/10</span>
+        </div>
+      ))}
+      <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '8px', textAlign: 'right' }}>
+        scored by claude-sonnet-4-6 vision · YouTube thumbnails only
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 11: Title independence matrix ───────────────────────────────────────
+
+function OverlapMatrix({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length < 2 || results.length > 12) return null
+
+  const wordSet = (r: any): Set<string> => new Set(
+    r.title.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/)
+      .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w.toLowerCase()))
+      .map((w: string) => w.toLowerCase())
+  )
+  const sets = results.map(wordSet)
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    const inter = [...a].filter(w => b.has(w)).length
+    const union = new Set([...a, ...b]).size
+    return union === 0 ? 0 : inter / union
+  }
+
+  const n = results.length
+  const cell = Math.min(Math.floor(520 / n), 52)
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Title independence" sub="Word overlap (Jaccard %) between corroborating titles. Empty cells = no shared keywords = truly independent sources." />
+      <div style={{ overflowX: 'auto' }}>
+        {/* Column index headers */}
+        <div style={{ display: 'flex', paddingLeft: '88px', marginBottom: '3px' }}>
+          {results.map((_, i) => (
+            <div key={i} style={{ width: cell, flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'center' }}>#{i + 1}</div>
+          ))}
+        </div>
+        {results.map((rA, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+            <div style={{ width: '88px', flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'right', paddingRight: '8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+              #{i + 1} {rA.channel.length > 8 ? rA.channel.slice(0, 7) + '…' : rA.channel}
             </div>
-          ) : null
+            {results.map((rB, j) => {
+              const isDiag = i === j
+              const sim = isDiag ? 1 : jaccard(sets[i], sets[j])
+              const simPct = Math.round(sim * 100)
+              const overlap = isDiag ? 'same source' : sim < 0.05 ? 'no shared keywords' : sim < 0.25 ? 'mostly independent' : sim < 0.5 ? 'some shared language' : 'high overlap — may reference same source'
+              return (
+                <div key={j}
+                  style={{
+                    width: cell, height: cell, flexShrink: 0, marginRight: 2,
+                    background: isDiag ? '#0f0f0e' : sim < 0.05 ? '#f7f4ef' : `rgba(26,107,74,${0.12 + sim * 0.88})`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => show(e, [
+                    isDiag ? rA.channel : `#${i+1} × #${j+1}`,
+                    isDiag ? `${SOURCE_LABELS[rA.sourceType as keyof typeof SOURCE_LABELS]}` : `${simPct}% overlap`,
+                    overlap,
+                  ])}
+                  onMouseMove={move} onMouseLeave={hide}
+                >
+                  {!isDiag && sim >= 0.05 && (
+                    <span style={{ fontFamily: MONO, fontSize: '9px', color: sim > 0.4 ? 'white' : '#1a6b4a', fontWeight: '600' }}>{simPct}</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '10px', textAlign: 'right' }}>
+        numbers = keyword overlap % · black diagonal = self · empty = independent
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart 12: Upload clock (24h polar) ────────────────────────────────────────
+
+function UploadClock({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length < 3) return null
+
+  const counts = Array(24).fill(0)
+  const byHour: string[][] = Array.from({ length: 24 }, () => [])
+  for (const r of results) {
+    const h = new Date(r.published).getUTCHours()
+    counts[h]++
+    byHour[h].push(r.channel)
+  }
+  const maxCount = Math.max(...counts, 1)
+
+  const SIZE = 260, CX = 130, CY = 130, R_IN = 38, R_OUT = 110
+  const hourAngle = (h: number) => (h / 24) * Math.PI * 2 - Math.PI / 2
+  const GAP = 0.04
+
+  const arcPath = (h: number, count: number) => {
+    if (count === 0) return ''
+    const r = R_IN + (count / maxCount) * (R_OUT - R_IN)
+    const a0 = hourAngle(h) - Math.PI / 24 + GAP
+    const a1 = hourAngle(h) + Math.PI / 24 - GAP
+    const cos0 = Math.cos(a0), sin0 = Math.sin(a0)
+    const cos1 = Math.cos(a1), sin1 = Math.sin(a1)
+    return [
+      `M${(CX + cos0 * R_IN).toFixed(2)},${(CY + sin0 * R_IN).toFixed(2)}`,
+      `L${(CX + cos0 * r).toFixed(2)},${(CY + sin0 * r).toFixed(2)}`,
+      `A${r},${r} 0 0,1 ${(CX + cos1 * r).toFixed(2)},${(CY + sin1 * r).toFixed(2)}`,
+      `L${(CX + cos1 * R_IN).toFixed(2)},${(CY + sin1 * R_IN).toFixed(2)}`,
+      `A${R_IN},${R_IN} 0 0,0 ${(CX + cos0 * R_IN).toFixed(2)},${(CY + sin0 * R_IN).toFixed(2)}`,
+    ].join(' ')
+  }
+
+  // Spread metric: how many distinct hours have uploads
+  const activeHours = counts.filter(c => c > 0).length
+  const clockLabels = [0, 6, 12, 18]
+
+  return (
+    <div style={{}}>
+      <ChartHeader title="Upload clock" sub="Hour of day (UTC) when each source was uploaded. Clustered bars may indicate scheduled or coordinated activity." />
+      <div style={{ display: 'flex', gap: '48px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: '220px', height: '220px', flexShrink: 0 }}>
+          {/* Inner circle */}
+          <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="1" />
+          {/* Outer ring guide */}
+          <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke="#edeae3" strokeWidth="0.5" strokeDasharray="2,4" />
+          {/* Hour arcs */}
+          {Array.from({ length: 24 }, (_, h) => {
+            const path = arcPath(h, counts[h])
+            if (!path) return null
+            return (
+              <path key={h} d={path}
+                fill={counts[h] === maxCount ? '#0f0f0e' : '#3a3a38'}
+                opacity={0.6 + (counts[h] / maxCount) * 0.4}
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={e => show(e, [
+                  `${String(h).padStart(2, '0')}:00 UTC`,
+                  `${counts[h]} source${counts[h] !== 1 ? 's' : ''}`,
+                  ...byHour[h].slice(0, 3),
+                  byHour[h].length > 3 ? `+${byHour[h].length - 3} more` : '',
+                ].filter(Boolean))}
+                onMouseMove={move} onMouseLeave={hide}
+              />
+            )
+          })}
+          {/* Clock labels */}
+          {clockLabels.map(h => {
+            const ang = hourAngle(h)
+            const lx = CX + Math.cos(ang) * (R_OUT + 14)
+            const ly = CY + Math.sin(ang) * (R_OUT + 14)
+            return <text key={h} x={lx} y={ly + 4} textAnchor="middle" fontSize="10" fill="#888680" fontFamily={MONO}>{h}h</text>
+          })}
+          {/* Center label */}
+          <text x={CX} y={CY - 4} textAnchor="middle" fontSize="11" fill="#0f0f0e" fontFamily={MONO} fontWeight="600">{activeHours}</text>
+          <text x={CX} y={CY + 10} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO}>hours</text>
+        </svg>
+        <div style={{ flex: 1, minWidth: '160px' }}>
+          <p style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', marginBottom: '8px' }}>
+            Activity across <strong>{activeHours}</strong> of 24 hours (UTC)
+          </p>
+          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', lineHeight: 1.6 }}>
+            {activeHours <= 3
+              ? 'Uploads are tightly clustered. This may indicate coordinated posting or a very short-lived event.'
+              : activeHours <= 8
+              ? 'Moderate spread. Consistent with organic coverage of a breaking event over several hours.'
+              : 'Wide spread across the day. Strong signal of organic, independent discovery by different people in different time zones.'}
+          </p>
+          <div style={{ marginTop: '16px', fontFamily: MONO, fontSize: '10px', color: '#888680' }}>
+            Peak hour: {String(counts.indexOf(maxCount)).padStart(2,'0')}:00 UTC ({maxCount} source{maxCount !== 1 ? 's' : ''})
+          </div>
+        </div>
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Visual Verdict Hero ───────────────────────────────────────────────────────
+
+function VisualVerdictHero({ sourceInfo, results, narrative, corroborationScore, corroborationLabel }: {
+  sourceInfo: any; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string
+}) {
+  const scoreColor = corroborationScore >= 6 ? '#1a6b4a' : corroborationScore >= 2 ? '#888680' : '#555452'
+  const badgeBg = corroborationScore >= 6 ? '#1a6b4a' : 'transparent'
+  const badgeColor = corroborationScore >= 6 ? '#f7f4ef' : corroborationScore >= 2 ? '#888680' : '#555452'
+  const badgeBorder = corroborationScore >= 6 ? '#1a6b4a' : '#3a3a38'
+
+  // Top visual witnesses — YouTube only, sorted by score desc then earliest first
+  const witnesses = [...results]
+    .filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
+    .sort((a, b) => b.visualScore - a.visualScore || a.hoursAfterSource - b.hoursAfterSource)
+    .slice(0, 4)
+
+  const scoreCol = (s: number) => s >= 7 ? '#1a6b4a' : s >= 4 ? '#c8c8c4' : '#555452'
+  const formatH = (h: number) => `${h > 0 ? '+' : ''}${h}h`
+
+  return (
+    <div style={{ background: '#0f0f0e' }}>
+
+      {/* Main visual row */}
+      <div style={{ padding: '40px 40px 0', display: 'flex', gap: '32px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+
+        {/* Source video */}
+        {sourceInfo && (
+          <div style={{ flex: '0 0 200px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>Source video</p>
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <img
+                src={`https://img.youtube.com/vi/${sourceInfo.id}/hqdefault.jpg`}
+                alt=""
+                style={{ width: '100%', display: 'block', filter: 'brightness(0.85)' }}
+              />
+            </div>
+            <p style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sourceInfo.channel}</p>
+            <p style={{ fontFamily: SANS, fontSize: '12px', color: '#c8c8c4', lineHeight: 1.4 }}>{sourceInfo.title}</p>
+          </div>
+        )}
+
+        {/* Arrow */}
+        {witnesses.length > 0 && (
+          <div style={{ flex: '0 0 auto', paddingTop: '80px', color: '#555452', fontFamily: MONO, fontSize: '20px' }}>→</div>
+        )}
+
+        {/* Witnesses */}
+        {witnesses.length > 0 ? (
+          <div style={{ flex: 1, minWidth: '300px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>
+              Independent visual witnesses · sorted by scene similarity
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {witnesses.map((r, i) => (
+                <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
+                   style={{ flex: '0 0 calc(25% - 9px)', minWidth: '120px', textDecoration: 'none', display: 'block' }}>
+                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                    <img
+                      src={`https://img.youtube.com/vi/${r.id}/hqdefault.jpg`}
+                      alt=""
+                      style={{ width: '100%', display: 'block', opacity: 0.9 }}
+                    />
+                    {/* Visual score badge */}
+                    <div style={{
+                      position: 'absolute', top: '6px', right: '6px',
+                      background: scoreCol(r.visualScore),
+                      padding: '3px 7px',
+                      display: 'flex', alignItems: 'baseline', gap: '1px',
+                    }}>
+                      <span style={{ fontFamily: MONO, fontSize: '16px', fontWeight: 700, color: '#f7f4ef', lineHeight: 1 }}>{r.visualScore}</span>
+                      <span style={{ fontFamily: MONO, fontSize: '9px', color: 'rgba(247,244,239,0.6)' }}>/10</span>
+                    </div>
+                    {/* Rank */}
+                    <div style={{ position: 'absolute', top: '6px', left: '6px', background: '#0f0f0e', padding: '2px 5px' }}>
+                      <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680' }}>#{i + 1}</span>
+                    </div>
+                  </div>
+                  <p style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginBottom: '2px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</p>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontFamily: MONO, fontSize: '9px', color: sourceCol(r.sourceType), textTransform: 'uppercase', letterSpacing: '0.06em' }}>{SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]}</span>
+                    <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>{formatH(r.hoursAfterSource)}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, paddingTop: '60px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '11px', color: '#555452' }}>No visual matches scored — AI vision analysis unavailable or no YouTube sources found.</p>
+          </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-        {(['raw', 'secondary', 'aggregated'] as const).map(type => (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', background: colors[type], border: type === 'aggregated' ? '1px solid #b0b0a8' : 'none' }} />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#3a3a38' }}>{labels[type]} <span style={{ color: '#888680' }}>({counts[type]})</span></span>
+
+      {/* Narrative + Visual scores side by side */}
+      <div style={{ padding: '28px 40px 0', display: 'flex', gap: '48px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {narrative && (
+          <div style={{ flex: '1 1 340px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '10px' }}>AI assessment</p>
+            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: '16px', fontStyle: 'italic', color: '#c8c8c4', lineHeight: 1.75 }}>
+              "{narrative}"
+            </p>
           </div>
-        ))}
+        )}
+        {/* Inline visual scores */}
+        {results.filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube').length > 0 && (
+          <div style={{ flex: '1 1 260px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '14px' }}>Visual similarity scores</p>
+            {results
+              .filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
+              .sort((a, b) => b.visualScore - a.visualScore)
+              .map((r, i) => {
+                const col = r.visualScore >= 7 ? '#1a6b4a' : r.visualScore >= 4 ? '#888680' : '#3a3a38'
+                return (
+                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 36px 28px', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginBottom: '4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</div>
+                      <div style={{ height: '4px', background: '#1a1a18' }}>
+                        <div style={{ height: '100%', width: `${r.visualScore * 10}%`, background: col, transition: 'width 0.6s ease' }} />
+                      </div>
+                    </div>
+                    <span style={{ fontFamily: MONO, fontSize: '13px', fontWeight: 700, color: col, textAlign: 'right' }}>{r.visualScore}</span>
+                    <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>/10</span>
+                  </div>
+                )
+              })}
+          </div>
+        )}
+      </div>
+
+      {/* Verdict bar */}
+      <div style={{ padding: '24px 40px', marginTop: '28px', borderTop: '1px solid #1a1a18', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+          <span style={{ fontFamily: MONO, fontSize: '40px', fontWeight: 700, lineHeight: 1, color: scoreColor }}>{corroborationScore.toFixed(1)}</span>
+          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452', textTransform: 'uppercase', letterSpacing: '0.1em' }}>score</span>
+        </div>
+        <div style={{
+          fontFamily: MONO, fontSize: '10px', letterSpacing: '0.14em', textTransform: 'uppercase', padding: '7px 16px',
+          background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}`,
+        }}>
+          {corroborationLabel}
+        </div>
+        <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452' }}>{results.length} source{results.length !== 1 ? 's' : ''} · 96h window</span>
+        {sourceInfo && (
+          <a href={sourceInfo.url} target="_blank" rel="noopener noreferrer"
+             style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: '9px', color: '#555452', textDecoration: 'none', letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: '1px solid #3a3a38', paddingBottom: '1px' }}>
+            View source →
+          </a>
+        )}
+      </div>
+
+      {/* Score bar */}
+      <div style={{ height: '3px', background: '#1a1a18' }}>
+        <div style={{ width: `${Math.min((corroborationScore / 12) * 100, 100)}%`, height: '3px', background: scoreColor, transition: 'width 0.8s ease' }} />
       </div>
     </div>
   )
 }
 
-function LanguageDiversity({ results }: { results: any[] }) {
-  const langs: Record<string, number> = {}
-  results.forEach(r => {
-    const l = r.language === 'unknown' ? 'undetected' : r.language
-    langs[l] = (langs[l] || 0) + 1
-  })
-  const sorted = Object.entries(langs).sort((a, b) => b[1] - a[1])
-  const total = results.length || 1
-
-  return (
-    <div style={{ borderTop: '1px solid #edeae3', paddingTop: '40px', marginBottom: '16px' }}>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>Language diversity</p>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#888680', marginBottom: '28px' }}>Footage from multiple languages suggests the event was witnessed across different communities</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {sorted.map(([lang, count]) => (
-          <div key={lang} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#3a3a38', width: '80px', flexShrink: 0, textTransform: 'uppercase' }}>{lang}</span>
-            <div style={{ flex: 1, height: '8px', background: '#edeae3' }}>
-              <div style={{ width: `${(count / total) * 100}%`, height: '8px', background: '#1a6b4a', transition: 'width 0.6s ease' }} />
-            </div>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680', width: '24px', textAlign: 'right' }}>{count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+function sourceCol(type: string) {
+  return SOURCE_COLORS[type as keyof typeof SOURCE_COLORS] ?? '#888680'
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Home() {
   const [query, setQuery] = useState('')
@@ -165,16 +1130,11 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState(-1)
   const [sourceInfo, setSourceInfo] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [narrative, setNarrative] = useState<string>('')
 
-  // Raw footage from unknown channels = strongest signal (3)
-  // News packages = weakest — outlets report without independently verifying (0.5)
-  const sourceWeights: Record<string, number> = { raw: 3, secondary: 1.5, aggregated: 0.5 }
-  const corroborationScore = results.reduce((sum, r) => sum + (sourceWeights[r.sourceType] ?? 1), 0)
+  const corroborationScore = results.reduce((sum, r) => sum + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
   const corroborationLabel = corroborationScore >= 6 ? 'Corroborated' : corroborationScore >= 2 ? 'Partial corroboration' : 'No corroboration found'
   const corroborationColor = corroborationScore >= 6 ? 'high' : corroborationScore >= 2 ? 'partial' : 'none'
-
-  const sourceTypeColors: Record<string, string> = { raw: '#1a6b4a', secondary: '#3a3a38', aggregated: '#b0b0a8' }
-  const sourceTypeLabels: Record<string, string> = { raw: 'raw footage', secondary: 'secondary', aggregated: 'news package' }
 
   const analyze = async () => {
     if (!query.trim()) return
@@ -182,6 +1142,7 @@ export default function Home() {
     setSearched(false)
     setSourceInfo(null)
     setError(null)
+    setNarrative('')
     setLoading(true)
     setCurrentStep(0)
 
@@ -196,21 +1157,19 @@ export default function Home() {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
-
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
-            if (typeof data.step === 'number') {
-              setCurrentStep(data.step)
-            }
+            if (typeof data.step === 'number') setCurrentStep(data.step)
+            if (data._debug) console.log('[AI debug]', data._debug)
             if (data.result) {
               setSourceInfo(data.result.source ?? null)
               setResults(data.result.results ?? [])
+              setNarrative(data.result.narrative ?? '')
               setSearched(true)
               setLoading(false)
               setCurrentStep(-1)
@@ -230,29 +1189,39 @@ export default function Home() {
     }
   }
 
+  const hasViews = results.some(r => r.viewCount > 0)
+  const hasPlatforms = new Set(results.map(r => r.platform ?? 'youtube')).size > 1
+  const hasOverlap = results.length >= 2 && results.length <= 12
+  const hasUploadClock = results.length >= 3
+  const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
+
+  // Card wrapper for dashboard grid cells
+  const C = ({ children, span = 6, bg = '#f7f4ef' }: { children: React.ReactNode; span?: number; bg?: string }) => (
+    <div style={{ gridColumn: `span ${span}`, background: bg, padding: '32px 28px', minWidth: 0 }}>{children}</div>
+  )
+
   return (
     <main style={{ background: '#f7f4ef', minHeight: '100vh' }}>
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header style={{ borderBottom: '1px solid #0f0f0e', padding: '18px 40px', display: 'flex', alignItems: 'baseline', gap: '16px' }}>
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '26px', fontWeight: 700, color: '#0f0f0e' }}>
           Converg<span style={{ color: '#c8472a' }}>.</span>
         </span>
-        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680', letterSpacing: '0.08em', textTransform: 'uppercase', borderLeft: '1px solid #888680', paddingLeft: '16px' }}>
+        <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.08em', textTransform: 'uppercase', borderLeft: '1px solid #888680', paddingLeft: '16px' }}>
           Visual corroboration engine
         </span>
       </header>
 
-      <div style={{ maxWidth: '760px', margin: '0 auto', padding: '64px 40px 80px' }}>
-
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', marginBottom: '16px' }}>Independent footage analysis</p>
-
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '42px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '12px' }}>
-          Reality leaves <em style={{ color: '#3a3a38' }}>multiple traces.</em>
+      {/* ── Input area ─────────────────────────────────────────────────────── */}
+      <div style={{ maxWidth: '760px', margin: '0 auto', padding: '64px 40px 0' }}>
+        <p style={{ fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888680', marginBottom: '20px' }}>Footage corroboration</p>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
+          Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
-
-        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '15px', fontWeight: 300, color: '#3a3a38', lineHeight: 1.6, marginBottom: '48px', maxWidth: '520px' }}>
-          Paste a YouTube URL. Converg searches for independent footage of the same scene — other people who were there and filmed it too. That is corroboration.
+        <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
+          Paste a YouTube URL. Converg finds independent footage of the same scene across platforms and languages — then maps every source across timing, spread, reach and keyword overlap.
         </p>
-
         <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', marginBottom: '12px', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
           <input
             type="text"
@@ -261,25 +1230,21 @@ export default function Home() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
             disabled={loading}
-            style={{ flex: 1, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: "'DM Mono', monospace", fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
+            style={{ flex: 1, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
           />
-          <button
-            className="analyze-btn"
-            onClick={analyze}
-            disabled={loading}
-            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: "'DM Mono', monospace", fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 24px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s' }}>
+          <button className="analyze-btn" onClick={analyze} disabled={loading}
+            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 24px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s' }}>
             {loading ? '...' : 'Analyze →'}
           </button>
         </div>
-
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680', marginBottom: '48px' }}>YouTube search only — no data sent to third parties</p>
+        <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', marginBottom: '48px' }}>
+          YouTube · TikTok · Instagram · 96-hour window · cross-language
+        </p>
 
         {loading && (
           <div style={{ marginBottom: '48px' }}>
             {steps.map((step, i) => {
-              const done = i < currentStep
-              const active = i === currentStep
-              const pending = i > currentStep
+              const done = i < currentStep, active = i === currentStep, pending = i > currentStep
               return (
                 <div key={step.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', padding: '20px 0', borderBottom: '1px solid #edeae3', opacity: pending ? 0.4 : 1, transition: 'opacity 0.4s' }}>
                   <div style={{ width: '20px', height: '20px', flexShrink: 0, position: 'relative', marginTop: '1px' }}>
@@ -291,10 +1256,10 @@ export default function Home() {
                     {pending && <div style={{ width: '16px', height: '16px', border: '1.5px solid #edeae3', borderRadius: '50%', position: 'absolute', top: '2px', left: '2px' }} />}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '11px', letterSpacing: '0.06em', color: pending ? '#888680' : '#0f0f0e', marginBottom: '4px' }}>{step.label}</p>
-                    <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680', letterSpacing: '0.04em' }}>{step.detail}</p>
+                    <p style={{ fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: pending ? '#888680' : '#0f0f0e', marginBottom: '4px' }}>{step.label}</p>
+                    <p style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.04em' }}>{step.detail}</p>
                   </div>
-                  <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: done ? '#1a6b4a' : '#888680' }}>{done ? '✓ done' : '—'}</p>
+                  <p style={{ fontFamily: MONO, fontSize: '10px', color: done ? '#1a6b4a' : '#888680' }}>{done ? '✓ done' : '—'}</p>
                 </div>
               )
             })}
@@ -304,95 +1269,83 @@ export default function Home() {
 
         {error && !loading && (
           <div style={{ border: '1px solid #c8472a', background: '#fff8f7', padding: '20px 24px', marginBottom: '24px' }}>
-            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#c8472a', marginBottom: '6px' }}>Error</p>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#3a3a38' }}>{error}</p>
+            <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#c8472a', marginBottom: '6px' }}>Error</p>
+            <p style={{ fontFamily: SANS, fontSize: '13px', color: '#3a3a38' }}>{error}</p>
           </div>
         )}
+      </div>
 
-        {searched && !loading && (
-          <>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', marginBottom: '24px' }}>
-              {results.length} independent footage {results.length === 1 ? 'source' : 'sources'} found
+      {/* ── Dashboard ──────────────────────────────────────────────────────── */}
+      {searched && !loading && (
+        <div style={{ marginTop: '48px' }}>
+
+          <VisualVerdictHero
+            sourceInfo={sourceInfo}
+            results={results}
+            narrative={narrative}
+            corroborationScore={corroborationScore}
+            corroborationLabel={corroborationLabel}
+          />
+
+          {results.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
+
+              {/* Row 1: score buildup — full width, most important chart */}
+              <C span={12}><CorroborationBuildup results={results} /></C>
+
+              {/* Row 2: corroboration profile + velocity + clock */}
+              <C span={4}><DiversityRadar results={results} /></C>
+              <C span={4}><VelocityHistogram results={results} /></C>
+              {hasUploadClock
+                ? <C span={4}><UploadClock results={results} /></C>
+                : <C span={4}><ScoreAnatomy results={results} /></C>
+              }
+
+              {/* Row 3: swim lanes full + score anatomy */}
+              <C span={8}><SwimLanes results={results} /></C>
+              <C span={4}><ScoreAnatomy results={results} /></C>
+
+              {/* Row 4: witness matrix + keyword frequency */}
+              <C span={7}><WitnessMatrix results={results} /></C>
+              <C span={5}><KeywordFrequency results={results} /></C>
+
+              {/* Row 5: witness chain — full width */}
+              <C span={12} bg="#f2efe9"><WitnessChain results={results} /></C>
+
+              {/* Row 6 conditional: reach + platform */}
+              {hasViews && <C span={hasPlatforms ? 7 : 12}><ReachBubbles results={results} /></C>}
+              {hasPlatforms && <C span={hasViews ? 5 : 12}><PlatformBreakdown results={results} /></C>}
+
+              {/* Row 7 conditional: title independence */}
+              {hasOverlap && <C span={12}><OverlapMatrix results={results} /></C>}
+
             </div>
-
-            <div style={{ border: '1px solid #0f0f0e', background: 'white', padding: '32px', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', gap: '24px' }}>
-                <p style={{ fontFamily: "'Playfair Display', serif", fontSize: '20px', fontWeight: 400, lineHeight: 1.3, color: '#0f0f0e', flex: 1 }}>
-                  {sourceInfo ? sourceInfo.title : query}
-                </p>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{
-                    fontFamily: "'DM Mono', monospace", fontSize: '9px', letterSpacing: '0.14em', textTransform: 'uppercase', padding: '5px 10px', marginBottom: '4px',
-                    background: corroborationColor === 'high' ? '#1a6b4a' : corroborationColor === 'partial' ? '#f0f8f4' : 'transparent',
-                    color: corroborationColor === 'high' ? 'white' : corroborationColor === 'partial' ? '#1a6b4a' : '#888680',
-                    border: corroborationColor !== 'none' ? '1px solid #1a6b4a' : '1px solid #888680'
-                  }}>
-                    {corroborationLabel}
-                  </div>
-                  <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680' }}>
-                    score {corroborationScore.toFixed(1)} · {results.length} {results.length === 1 ? 'source' : 'sources'}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ height: '3px', background: '#edeae3', marginBottom: '8px' }}>
-                <div style={{ width: `${Math.min((corroborationScore / 12) * 100, 100)}%`, height: '3px', background: corroborationColor !== 'none' ? '#1a6b4a' : '#888680', transition: 'width 0.8s ease' }}></div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680', textTransform: 'uppercase', marginBottom: '24px' }}>
-                <span>No corroboration</span><span>Corroborated</span>
-              </div>
-
-              {sourceInfo && (
-                <div style={{ marginBottom: '16px', padding: '12px 14px', background: '#0f0f0e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', textTransform: 'uppercase', color: '#888680', marginBottom: '4px' }}>Source video · {sourceInfo.channel}</p>
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '12px', color: '#f7f4ef', lineHeight: 1.4 }}>{sourceInfo.title}</p>
-                  </div>
-                  <a href={sourceInfo.url} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680', textDecoration: 'none', letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0, marginLeft: '16px' }}>View →</a>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-                {results.map((r, i) => (
-                  <a key={i} href={r.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', border: '1px solid #edeae3', padding: '12px 14px', background: '#f7f4ef', display: 'block' }}>
-                    <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', textTransform: 'uppercase', color: '#888680', marginBottom: '4px' }}>
-                      YouTube · {r.channel} · <span style={{ color: sourceTypeColors[r.sourceType] ?? '#888680' }}>{sourceTypeLabels[r.sourceType] ?? r.sourceType}</span>
-                    </p>
-                    <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '13px', color: '#0f0f0e', lineHeight: 1.4 }}>{r.title}</p>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680' }}>{new Date(r.published).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                      {r.viewCount > 0 && <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '9px', color: '#888680' }}>{formatViews(r.viewCount)}</p>}
-                    </div>
-                  </a>
-                ))}
-              </div>
-
-              {results.length > 0 && (
-                <div style={{ borderTop: '1px solid #edeae3', paddingTop: '8px' }}>
-                  <Timeline results={results} />
-                  <UploadTiming results={results} />
-                  <SourceIndependence results={results} />
-                  <LanguageDiversity results={results} />
-                </div>
-              )}
-            </div>
-
-            {results.length === 0 && (
-              <div style={{ border: '1px solid #edeae3', background: '#f7f4ef', padding: '32px' }}>
-                <p style={{ fontFamily: "'DM Mono', monospace", fontSize: '11px', color: '#888680' }}>
+          ) : (
+            <div style={{ maxWidth: '760px', margin: '48px auto', padding: '0 40px' }}>
+              <div style={{ border: '1px solid #edeae3', background: 'white', padding: '32px' }}>
+                <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>
                   No independent footage found in the 96h window. Converg does not render a verdict.
                 </p>
               </div>
-            )}
-          </>
-        )}
-
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#888680', lineHeight: 1.7, borderTop: '1px solid #edeae3', paddingTop: '24px', marginTop: '40px' }}>
-          Converg searches for independent footage of the same event, not authenticity verification.<br />
-          Corroboration means other people filmed the same scene. No corroboration means the opposite — nothing more.
+            </div>
+          )}
         </div>
+      )}
 
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <div style={{ maxWidth: '760px', margin: '0 auto', padding: searched ? '40px 40px 80px' : '80px 40px' }}>
+        <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', lineHeight: 1.7, borderTop: '1px solid #edeae3', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
+          <span>
+            Converg searches for independent footage of the same event, not authenticity verification.<br />
+            Corroboration means other people filmed the same scene. No corroboration means the opposite — nothing more.
+          </span>
+          <a href="https://instagram.com/paolofontanadesign" target="_blank" rel="noopener noreferrer"
+             style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', textDecoration: 'none', letterSpacing: '0.06em', borderBottom: '1px solid #0f0f0e', paddingBottom: '1px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            @paolofontanadesign ↗
+          </a>
+        </div>
       </div>
+
     </main>
   )
 }

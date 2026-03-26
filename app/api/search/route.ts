@@ -84,7 +84,10 @@ export async function GET(request: NextRequest) {
           `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${apiKey}`
         ).then(r => r.json())
 
-        if (!detailsData.items?.length) { send({ error: 'Video not found' }); return }
+        if (detailsData.error?.code === 403 || detailsData.error?.status === 'RESOURCE_EXHAUSTED') {
+          send({ error: 'YouTube API quota exceeded for today. It resets at midnight Pacific Time. You can create a new API key in Google Cloud Console to continue.' }); return
+        }
+        if (!detailsData.items?.length) { send({ error: 'Video not found — check the URL and try again' }); return }
 
         const sourceVideo = detailsData.items[0].snippet
         const publishedAt = new Date(sourceVideo.publishedAt)
@@ -142,11 +145,24 @@ export async function GET(request: NextRequest) {
         const buildSearchUrl = (q: string) =>
           `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&publishedAfter=${after}&publishedBefore=${before}&maxResults=25&key=${apiKey}`
 
-        // Step 2: Parallel corroboration search
+        // Step 2: Parallel corroboration search (YouTube + Bing social)
         send({ step: 2 })
-        const searchResponses = await Promise.all(
-          queries.map(q => fetch(buildSearchUrl(q)).then(r => r.json()))
-        )
+        const bingKey = process.env.BING_API_KEY
+
+        const [searchResponses, tiktokData, instaData] = await Promise.all([
+          Promise.all(queries.map(q => fetch(buildSearchUrl(q)).then(r => r.json()))),
+          bingKey
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(entityBase + ' site:tiktok.com')}&count=15&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json())
+            : Promise.resolve(null),
+          bingKey
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(entityBase + ' site:instagram.com/reel')}&count=15&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json())
+            : Promise.resolve(null),
+        ])
+
+        const quotaExhausted = searchResponses.some((data: any) => data.error?.code === 403)
+        if (quotaExhausted) {
+          send({ error: 'YouTube API quota exceeded for today. It resets at midnight Pacific Time.' }); return
+        }
 
         const seenVideoIds = new Set<string>()
         const mergedItems = searchResponses
@@ -197,6 +213,7 @@ export async function GET(request: NextRequest) {
               hoursAfterSource,
               language: lang,
               sourceType,
+              platform: 'youtube' as const,
               url: `https://youtube.com/watch?v=${item.id.videoId}`
             }
           })
@@ -212,7 +229,130 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const results = filteredResults.map((r: any) => ({ ...r, viewCount: viewCounts[r.id] ?? 0 }))
+        // Parse Bing social media results
+        const parseBingItems = (data: any, platform: 'tiktok' | 'instagram') => {
+          if (!data?.webPages?.value) return []
+          const seenUrls = new Set<string>()
+          return (data.webPages.value as any[])
+            .filter((item: any) => item.datePublished && item.url)
+            .map((item: any) => {
+              const pub = new Date(item.datePublished)
+              const hoursAfterSource = Math.round((pub.getTime() - publishedAt.getTime()) / (1000 * 60 * 60))
+              if (Math.abs(hoursAfterSource) > 48) return null
+              if (seenUrls.has(item.url)) return null
+              seenUrls.add(item.url)
+              const cleanedTitle = (item.name || '').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+              // Apply same relevance filter as YouTube
+              const t = cleanedTitle.toLowerCase() + ' ' + (item.snippet || '').toLowerCase()
+              const entityScore = namedEntityKws.filter(kw => kw.length >= 4 && t.includes(kw)).length * 1.5
+              const regularScore = regularKws.filter((kw: string) => t.includes(kw)).length
+              if (entityScore + regularScore < 2) return null
+              const lang = detectLanguage(cleanedTitle)
+              const sourceType = isEditorial(cleanedTitle) ? 'aggregated' : 'raw'
+              return {
+                id: item.url,
+                title: cleanedTitle,
+                channel: item.displayUrl?.split('/')[2]?.replace('www.', '') ?? platform,
+                published: pub.toISOString(),
+                hoursAfterSource,
+                language: lang,
+                sourceType,
+                platform,
+                url: item.url,
+                viewCount: 0,
+              }
+            })
+            .filter(Boolean)
+        }
+
+        const socialResults = [
+          ...parseBingItems(tiktokData, 'tiktok'),
+          ...parseBingItems(instaData, 'instagram'),
+        ]
+
+        const results = [
+          ...filteredResults.map((r: any) => ({ ...r, viewCount: viewCounts[r.id] ?? 0 })),
+          ...socialResults,
+        ]
+
+        // Step 4: AI visual analysis + narrative synthesis
+        const anthropicKey = process.env.ANTHROPIC_API_KEY
+        let narrative = ''
+        const visualScores: Record<string, number> = {}
+
+        if (anthropicKey && results.length > 0) {
+          send({ step: 4 })
+
+          const anthropicFetch = (body: object) => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify(body),
+          }).then(r => r.json())
+
+          // Visual scoring — YouTube only (thumbnails are public and standardised)
+          const ytResults = results.filter((r: any) => (r.platform ?? 'youtube') === 'youtube').slice(0, 6)
+
+          const [visionRes, narrativeRes] = await Promise.all([
+            // Vision: compare thumbnails
+            ytResults.length > 0 ? anthropicFetch({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 64,
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'text', text: `Reference video: "${title}". Score each thumbnail's visual similarity to the reference (0–10): 0 = different scene, 10 = same physical scene. Return only a JSON array of numbers, one per thumbnail in order.` },
+                  { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` } },
+                  ...ytResults.flatMap((r: any, i: number) => [
+                    { type: 'text', text: `#${i + 1} — ${r.channel}:` },
+                    { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${r.id}/hqdefault.jpg` } },
+                  ]),
+                ],
+              }],
+            }).catch((e: any) => { console.error('[vision error]', e); return null }) : Promise.resolve(null),
+
+            // Narrative: plain-language corroboration assessment — max 100 words
+            anthropicFetch({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 160,
+              messages: [{
+                role: 'user',
+                content: `In max 100 words, assess the strength of independent visual evidence for this video. Be direct and specific: mention timing, source types, languages, visual scores if available. No preamble, no bullet points, output only the assessment.
+
+Source: "${title}" by ${sourceVideo.channelTitle}
+Sources found: ${JSON.stringify(results.map((r: any) => ({
+  channel: r.channel,
+  type: r.sourceType,
+  platform: r.platform ?? 'youtube',
+  hoursAfterSource: r.hoursAfterSource,
+  language: r.language,
+  views: r.viewCount,
+})))}`,
+              }],
+            }).catch((e: any) => { console.error('[narrative error]', e); return null }),
+          ])
+
+          // Send debug info via SSE so it's visible in browser console
+          send({ _debug: {
+            vision: JSON.stringify(visionRes)?.slice(0, 400),
+            narrative: JSON.stringify(narrativeRes)?.slice(0, 400),
+          }})
+
+          // Parse vision scores
+          try {
+            const raw = visionRes?.content?.[0]?.text ?? '[]'
+            const scores: number[] = JSON.parse(raw.match(/\[[\d.,\s]+\]/)?.[0] ?? '[]')
+            ytResults.forEach((r: any, i: number) => {
+              if (typeof scores[i] === 'number') visualScores[r.id] = Math.max(0, Math.min(10, scores[i]))
+            })
+          } catch {}
+
+          narrative = narrativeRes?.content?.[0]?.text?.trim() ?? ''
+        }
+
+        const finalResults = results.map((r: any) => ({
+          ...r,
+          visualScore: visualScores[r.id] ?? null,
+        }))
 
         send({
           result: {
@@ -224,7 +364,8 @@ export async function GET(request: NextRequest) {
               url: `https://youtube.com/watch?v=${videoId}`
             },
             window: { after, before },
-            results
+            results: finalResults,
+            narrative,
           }
         })
       } catch (e: any) {
