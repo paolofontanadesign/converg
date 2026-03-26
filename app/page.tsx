@@ -1065,8 +1065,8 @@ function UploadClock({ results }: { results: any[] }) {
 
 // ── Visual Verdict Hero ───────────────────────────────────────────────────────
 
-function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles }: {
-  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]
+function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile }: {
+  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean
 }) {
   const scoreColor = debunked ? '#c8472a'
     : agencyCount > 0 && aiScores.outrage < 6 ? '#1a6b4a'
@@ -1098,7 +1098,7 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
     <div style={{ background: '#0f0f0e' }}>
 
       {/* Main visual row */}
-      <div style={{ padding: '40px 40px 0', display: 'flex', gap: '32px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ padding: isMobile ? '24px 20px 0' : '40px 40px 0', display: 'flex', gap: '32px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
         {/* Query text block — replaces source video */}
         <div style={{ flex: '0 0 220px' }}>
@@ -1143,7 +1143,7 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
 
         {/* Witnesses */}
         {witnesses.length > 0 ? (
-          <div style={{ flex: 1, minWidth: '300px' }}>
+          <div style={{ flex: 1, minWidth: isMobile ? '100%' : '300px' }}>
             <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>
               Independent visual witnesses · sorted by scene similarity
             </p>
@@ -1190,7 +1190,7 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
       </div>
 
       {/* Narrative + Visual scores side by side */}
-      <div style={{ padding: '28px 40px 0', display: 'flex', gap: '48px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ padding: isMobile ? '20px 20px 0' : '28px 40px 0', display: 'flex', gap: '48px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {narrative && (
           <div style={{ flex: '1 1 340px' }}>
             <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '10px' }}>AI assessment</p>
@@ -1226,7 +1226,7 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
       </div>
 
       {/* Verdict bar */}
-      <div style={{ padding: '24px 40px', marginTop: '28px', borderTop: '1px solid #1a1a18', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
+      <div style={{ padding: isMobile ? '20px 20px' : '24px 40px', marginTop: '28px', borderTop: '1px solid #1a1a18', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
           <span style={{ fontFamily: MONO, fontSize: '40px', fontWeight: 700, lineHeight: 1, color: scoreColor }}>{corroborationScore.toFixed(1)}</span>
           <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452', textTransform: 'uppercase', letterSpacing: '0.1em' }}>score</span>
@@ -1407,7 +1407,7 @@ export default function Home() {
 
   // Card wrapper for dashboard grid cells
   const C = ({ children, span = 6, bg = '#f7f4ef' }: { children: React.ReactNode; span?: number; bg?: string }) => (
-    <div style={{ gridColumn: `span ${span}`, background: bg, padding: '32px 28px', minWidth: 0 }}>{children}</div>
+    <div style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 16px' : '32px 28px', minWidth: 0, overflow: 'hidden' }}>{children}</div>
   )
 
   return (
@@ -1426,7 +1426,7 @@ export default function Home() {
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
       <div style={{ flex: 1, maxWidth: isMobile ? '100%' : '760px', padding: isMobile ? '40px 20px 0' : '64px 40px 0' }}>
-        <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', marginBottom: '20px' }}>Converg is pure heuristics — source authority, emotional tone, and coverage rarity, cross-referenced.</p>
+        <p style={{ fontFamily: MONO, fontSize: '11px', color: '#c8472a', marginBottom: '20px' }}>Don't trust one source.</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
@@ -1504,7 +1504,7 @@ export default function Home() {
 
       {/* ── Dashboard ──────────────────────────────────────────────────────── */}
       {searched && !loading && (
-        <div style={{ marginTop: '48px' }}>
+        <div style={{ marginTop: '48px', overflowX: 'hidden' }}>
 
           <VisualVerdictHero
             checkedQuery={checkedQuery}
@@ -1518,10 +1518,11 @@ export default function Home() {
             debunked={debunked}
             agencyCount={agencyCount}
             factCheckArticles={factCheckArticles}
+            isMobile={isMobile}
           />
 
           {results.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
 
               {/* Row 1: score buildup + score anatomy */}
               <C span={8}><CorroborationBuildup results={results} /></C>
@@ -1551,7 +1552,7 @@ export default function Home() {
 
             </div>
           ) : (
-            <div style={{ maxWidth: '760px', margin: '48px 0', padding: '0 40px' }}>
+            <div style={{ maxWidth: '760px', margin: '48px 0', padding: isMobile ? '0 20px' : '0 40px' }}>
               <div style={{ border: '1px solid #edeae3', background: 'white', padding: '32px' }}>
                 <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>
                   No independent sources found. Converg does not render a verdict.
@@ -1566,7 +1567,7 @@ export default function Home() {
       <div style={{ background: '#0f0f0e', padding: isMobile ? '32px 20px' : '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
           <span style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '16px' : '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.35, flex: '1 1 0', minWidth: 0 }}>
-            Converg is pure heuristics — source authority, emotional tone,<br />and coverage rarity, cross-referenced.
+            <em>Converg is pure heuristics — source authority, emotional tone,<br />and coverage rarity, cross-referenced.</em>
           </span>
           <a href="https://instagram.com/paolofontanadesign" target="_blank" rel="noopener noreferrer"
              style={{ fontFamily: MONO, fontSize: '11px', color: '#f7f4ef', textDecoration: 'none', letterSpacing: '0.06em', borderBottom: '1px solid #3a3a38', paddingBottom: '1px', whiteSpace: 'nowrap', flexShrink: 0 }}>

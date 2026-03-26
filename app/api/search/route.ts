@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
         const queryLang = detectLanguage(query)
         let searchStr = keywordStr  // default: use original keywords
 
-        if (queryLang !== 'en' && queryLang !== 'undetected' && anthropicKey) {
+        if (queryLang !== 'en' && anthropicKey) {
           try {
             const res = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
