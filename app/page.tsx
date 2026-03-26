@@ -338,7 +338,7 @@ function WitnessMatrix({ results }: { results: any[] }) {
               <div
                 key={b}
                 style={{
-                  height: '32px',
+                  height: `${Math.max(44, Math.floor(160 / Math.max(languages.length, 1)))}px`,
                   background: count > 0 ? `rgba(26,107,74,${0.12 + intensity * 0.88})` : '#f7f4ef',
                   border: b === 0 ? '1px solid rgba(200,71,42,0.3)' : '1px solid transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -760,7 +760,7 @@ function VisualMatchChart({ results }: { results: any[] }) {
     <div style={{}}>
       <ChartHeader title="Visual similarity" sub="AI vision score (0–10) comparing each source thumbnail to the reference scene. High scores indicate the same physical location was filmed." />
       {sorted.map(r => (
-        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '180px 1fr 48px', gap: '14px', alignItems: 'center', marginBottom: '12px', cursor: 'default' }}
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 36px', gap: '12px', alignItems: 'center', marginBottom: '12px', cursor: 'default' }}
              onMouseEnter={e => show(e, [r.channel, vsLabel(r.visualScore), `${r.visualScore}/10 visual similarity`, SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]])}
              onMouseMove={move} onMouseLeave={hide}
         >
@@ -802,22 +802,23 @@ function OverlapMatrix({ results }: { results: any[] }) {
   }
 
   const n = results.length
-  const cell = Math.min(Math.floor(520 / n), 52)
+  const cell = Math.min(Math.floor(260 / n), 30)
+  const lw = 56
 
   return (
     <div style={{}}>
-      <ChartHeader title="Title independence" sub="Word overlap (Jaccard %) between corroborating titles. Empty cells = no shared keywords = truly independent sources." />
+      <ChartHeader title="Title independence" sub="Word overlap (Jaccard %) between titles. Empty = no shared keywords = independent sources." />
       <div style={{ overflowX: 'auto' }}>
         {/* Column index headers */}
-        <div style={{ display: 'flex', paddingLeft: '88px', marginBottom: '3px' }}>
+        <div style={{ display: 'flex', paddingLeft: `${lw}px`, marginBottom: '3px' }}>
           {results.map((_, i) => (
             <div key={i} style={{ width: cell, flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'center' }}>#{i + 1}</div>
           ))}
         </div>
         {results.map((rA, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-            <div style={{ width: '88px', flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'right', paddingRight: '8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-              #{i + 1} {rA.channel.length > 8 ? rA.channel.slice(0, 7) + '…' : rA.channel}
+            <div style={{ width: `${lw}px`, flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'right', paddingRight: '6px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+              #{i + 1}
             </div>
             {results.map((rB, j) => {
               const isDiag = i === j
@@ -972,7 +973,7 @@ function VisualVerdictHero({ sourceInfo, results, narrative, corroborationScore,
   const witnesses = [...results]
     .filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
     .sort((a, b) => b.visualScore - a.visualScore || a.hoursAfterSource - b.hoursAfterSource)
-    .slice(0, 4)
+    .slice(0, 5)
 
   const scoreCol = (s: number) => s >= 7 ? '#1a6b4a' : s >= 4 ? '#c8c8c4' : '#555452'
   const formatH = (h: number) => `${h > 0 ? '+' : ''}${h}h`
@@ -985,17 +986,18 @@ function VisualVerdictHero({ sourceInfo, results, narrative, corroborationScore,
 
         {/* Source video */}
         {sourceInfo && (
-          <div style={{ flex: '0 0 200px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>Source video</p>
-            <div style={{ position: 'relative', marginBottom: '12px' }}>
+          <div style={{ flex: '0 0 220px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#c8472a', letterSpacing: '0.12em', marginBottom: '10px', fontWeight: '600' }}>Source video</p>
+            <div style={{ position: 'relative', marginBottom: '12px', outline: '2px solid #c8472a' }}>
               <img
                 src={`https://img.youtube.com/vi/${sourceInfo.id}/hqdefault.jpg`}
                 alt=""
-                style={{ width: '100%', display: 'block', filter: 'brightness(0.85)' }}
+                style={{ width: '100%', display: 'block' }}
               />
+              <div style={{ position: 'absolute', bottom: '0', left: '0', right: '0', background: 'rgba(200,71,42,0.18)', height: '3px' }} />
             </div>
-            <p style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sourceInfo.channel}</p>
-            <p style={{ fontFamily: SANS, fontSize: '12px', color: '#c8c8c4', lineHeight: 1.4 }}>{sourceInfo.title}</p>
+            <p style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{sourceInfo.channel}</p>
+            <p style={{ fontFamily: SANS, fontSize: '12px', color: '#f7f4ef', lineHeight: 1.4 }}>{sourceInfo.title}</p>
           </div>
         )}
 
@@ -1010,15 +1012,15 @@ function VisualVerdictHero({ sourceInfo, results, narrative, corroborationScore,
             <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>
               Independent visual witnesses · sorted by scene similarity
             </p>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: '4px' }}>
               {witnesses.map((r, i) => (
                 <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
-                   style={{ flex: '0 0 calc(25% - 9px)', minWidth: '120px', textDecoration: 'none', display: 'block' }}>
-                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                   style={{ flex: '0 0 220px', textDecoration: 'none', display: 'block' }}>
+                  <div style={{ position: 'relative', marginBottom: '12px' }}>
                     <img
                       src={`https://img.youtube.com/vi/${r.id}/hqdefault.jpg`}
                       alt=""
-                      style={{ width: '100%', display: 'block', opacity: 0.9 }}
+                      style={{ width: '100%', display: 'block', opacity: 0.85 }}
                     />
                     {/* Visual score badge */}
                     <div style={{
@@ -1035,7 +1037,8 @@ function VisualVerdictHero({ sourceInfo, results, narrative, corroborationScore,
                       <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680' }}>#{i + 1}</span>
                     </div>
                   </div>
-                  <p style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginBottom: '2px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</p>
+                  <p style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{r.channel}</p>
+                  <p style={{ fontFamily: SANS, fontSize: '12px', color: '#c8c8c4', lineHeight: 1.4, marginBottom: '6px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</p>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span style={{ fontFamily: MONO, fontSize: '9px', color: sourceCol(r.sourceType), textTransform: 'uppercase', letterSpacing: '0.06em' }}>{SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]}</span>
                     <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>{formatH(r.hoursAfterSource)}</span>
@@ -1290,20 +1293,17 @@ export default function Home() {
           {results.length > 0 ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
 
-              {/* Row 1: score buildup — full width, most important chart */}
-              <C span={12}><CorroborationBuildup results={results} /></C>
-
-              {/* Row 2: corroboration profile + velocity + clock */}
-              <C span={4}><DiversityRadar results={results} /></C>
-              <C span={4}><VelocityHistogram results={results} /></C>
-              {hasUploadClock
-                ? <C span={4}><UploadClock results={results} /></C>
-                : <C span={4}><ScoreAnatomy results={results} /></C>
-              }
-
-              {/* Row 3: swim lanes full + score anatomy */}
-              <C span={8}><SwimLanes results={results} /></C>
+              {/* Row 1: score buildup + score anatomy */}
+              <C span={8}><CorroborationBuildup results={results} /></C>
               <C span={4}><ScoreAnatomy results={results} /></C>
+
+              {/* Row 2: corroboration profile + clock */}
+              <C span={hasUploadClock ? 6 : 12}><DiversityRadar results={results} /></C>
+              {hasUploadClock && <C span={6}><UploadClock results={results} /></C>}
+
+              {/* Row 3: swim lanes + title independence */}
+              <C span={8}><SwimLanes results={results} /></C>
+              <C span={4}>{hasOverlap ? <OverlapMatrix results={results} /> : <VelocityHistogram results={results} />}</C>
 
               {/* Row 4: witness matrix + keyword frequency */}
               <C span={7}><WitnessMatrix results={results} /></C>
@@ -1312,12 +1312,10 @@ export default function Home() {
               {/* Row 5: witness chain — full width */}
               <C span={12} bg="#f2efe9"><WitnessChain results={results} /></C>
 
-              {/* Row 6 conditional: reach + platform */}
-              {hasViews && <C span={hasPlatforms ? 7 : 12}><ReachBubbles results={results} /></C>}
-              {hasPlatforms && <C span={hasViews ? 5 : 12}><PlatformBreakdown results={results} /></C>}
-
-              {/* Row 7 conditional: title independence */}
-              {hasOverlap && <C span={12}><OverlapMatrix results={results} /></C>}
+              {/* Row 6 conditional: reach × timing + visual similarity */}
+              {hasViews && <C span={hasVisualScores ? 6 : 12}><ReachBubbles results={results} /></C>}
+              {hasVisualScores && <C span={hasViews ? 6 : 12}><VisualMatchChart results={results} /></C>}
+              {hasPlatforms && <C span={12}><PlatformBreakdown results={results} /></C>}
 
             </div>
           ) : (
