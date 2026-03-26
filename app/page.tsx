@@ -1475,8 +1475,8 @@ export default function Home() {
             </span>
           )}
           <button className="analyze-btn" onClick={analyze} disabled={loading || (mounted && charsNeeded > 0)}
-            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 14px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
-            {loading ? '...' : 'Analyze →'}
+            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
+            {loading ? '...' : 'Run →'}
           </button>
         </div>
 

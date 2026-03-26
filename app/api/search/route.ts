@@ -427,17 +427,72 @@ export async function GET(request: NextRequest) {
           }).then(r => r.json())
 
           const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, raw: 3, unverified: 4, secondary: 5, aggregated: 6 }
+
+          // ── Step 4a: Analysis first (fast Haiku call) — determines which results are irrelevant
+          // Running this BEFORE vision ensures we don't score off-topic videos against the wrong reference.
+          const analysisRes = await anthropicFetch({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Analyze this news claim and its sources for credibility. Respond with JSON only (no markdown):
+{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
+
+outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
+simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
+credibilityScore: overall credibility of the claim based on who covers it and how (0=almost certainly false, 5=unverified, 10=confirmed by credible sources)
+irrelevantIndices: 0-based indices of sources that are clearly about a DIFFERENT topic and not related to the claim (e.g. a UFO result when the claim is about a nuclear reactor, or vice versa). Be aggressive — mark any result whose title does not directly relate to the specific claim.
+
+Claim: "${query}"
+Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
+${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i, title: r.title, source: r.channel, type: r.sourceType, platform: r.platform, hours: r.hoursAfterSource, lang: r.language })))}`,
+            }]
+          }).catch(() => null)
+
+          // Parse analysis and remove off-topic results BEFORE vision scoring
+          const irrelevantIndices = new Set<number>()
+          try {
+            const text  = analysisRes?.content?.[0]?.text ?? '{}'
+            const match = text.match(/\{[\s\S]*\}/)
+            const parsed = JSON.parse(match?.[0] ?? '{}')
+            narrative        = parsed.narrative?.trim() ?? ''
+            outrageScore     = typeof parsed.outrageScore     === 'number' ? Math.max(0, Math.min(10, parsed.outrageScore))     : 5
+            simplicityScore  = typeof parsed.simplicityScore  === 'number' ? Math.max(0, Math.min(10, parsed.simplicityScore))  : 5
+            credibilityScore = typeof parsed.credibilityScore === 'number' ? Math.max(0, Math.min(10, parsed.credibilityScore)) : 5
+            if (Array.isArray(parsed.irrelevantIndices)) {
+              for (const idx of parsed.irrelevantIndices) {
+                if (typeof idx === 'number') irrelevantIndices.add(idx)
+              }
+            }
+          } catch {}
+
+          // Remove off-topic results before vision scoring — this ensures refVideo is always on-topic
+          if (irrelevantIndices.size > 0) {
+            resultsWithTiming.splice(0, resultsWithTiming.length,
+              ...resultsWithTiming.filter((_: any, i: number) => !irrelevantIndices.has(i))
+            )
+          }
+
+          // ── Step 4b: Vision scoring on the cleaned result set ─────────────
+          // Score relevance to original query keywords (original language > English translation)
+          const scoreVideoRelevance = (r: any) => {
+            const lower = r.title.toLowerCase()
+            const origHits   = origQueryWords.filter((w: string) => lower.includes(w)).length
+            const entityHits = namedEntityKws.filter((e: string) => lower.includes(e)).length
+            return origHits * 3 + entityHits
+          }
+
           const ytResults = resultsWithTiming.filter(r => r.platform === 'youtube')
-          // Prefer highest-credibility source as visual reference; use time as tiebreaker
+          // Prefer the video most relevant to the original query as visual reference
           const refVideo  = [...ytResults].sort((a, b) =>
+            scoreVideoRelevance(b) - scoreVideoRelevance(a) ||
             (SOURCE_RANK[a.sourceType] ?? 9) - (SOURCE_RANK[b.sourceType] ?? 9) ||
             a.hoursAfterSource - b.hoursAfterSource
           )[0]
           const otherVids = ytResults.filter(r => r.id !== refVideo?.id)
 
-          const [visionRes, analysisRes] = await Promise.all([
-            refVideo
-              ? otherVids.length > 0
+          const visionRes = refVideo
+            ? await (otherVids.length > 0
                 ? anthropicFetch({
                     model: 'claude-sonnet-4-6',
                     max_tokens: 128,
@@ -459,7 +514,6 @@ export async function GET(request: NextRequest) {
                     }]
                   }).catch(() => null)
                 : anthropicFetch({
-                    // Single video: score its visual relevance to the claimed event directly
                     model: 'claude-sonnet-4-6',
                     max_tokens: 32,
                     messages: [{
@@ -469,28 +523,8 @@ export async function GET(request: NextRequest) {
                         { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/hqdefault.jpg` } },
                       ],
                     }]
-                  }).catch(() => null)
-              : Promise.resolve(null),
-
-            anthropicFetch({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 300,
-              messages: [{
-                role: 'user',
-                content: `Analyze this news claim and its sources for credibility. Respond with JSON only (no markdown):
-{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
-
-outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
-simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
-credibilityScore: overall credibility of the claim based on who covers it and how (0=almost certainly false, 5=unverified, 10=confirmed by credible sources)
-irrelevantIndices: 0-based indices of sources that are clearly about a DIFFERENT topic and not related to the claim (e.g. a UFO result when the claim is about a nuclear reactor, or vice versa). Be conservative — only mark clearly off-topic results.
-
-Claim: "${query}"
-Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
-${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i, title: r.title, source: r.channel, type: r.sourceType, platform: r.platform, hours: r.hoursAfterSource, lang: r.language })))}`,
-              }]
-            }).catch(() => null),
-          ])
+                  }).catch(() => null))
+            : null
 
           // Parse visual scores
           if (refVideo && visionRes) {
@@ -508,31 +542,7 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
             } catch {}
           }
 
-          // Parse analysis
-          const irrelevantIndices = new Set<number>()
-          try {
-            const text  = analysisRes?.content?.[0]?.text ?? '{}'
-            const match = text.match(/\{[\s\S]*\}/)
-            const parsed = JSON.parse(match?.[0] ?? '{}')
-            narrative        = parsed.narrative?.trim() ?? ''
-            outrageScore     = typeof parsed.outrageScore     === 'number' ? Math.max(0, Math.min(10, parsed.outrageScore))     : 5
-            simplicityScore  = typeof parsed.simplicityScore  === 'number' ? Math.max(0, Math.min(10, parsed.simplicityScore))  : 5
-            credibilityScore = typeof parsed.credibilityScore === 'number' ? Math.max(0, Math.min(10, parsed.credibilityScore)) : 5
-            if (Array.isArray(parsed.irrelevantIndices)) {
-              for (const idx of parsed.irrelevantIndices) {
-                if (typeof idx === 'number') irrelevantIndices.add(idx)
-              }
-            }
-          } catch {}
-
           send({ _debug: { outrageScore, simplicityScore, narrativeLen: narrative.length, vScores: visualScores, irrelevantCount: irrelevantIndices.size } })
-
-          // Remove off-topic results identified by AI before scoring
-          if (irrelevantIndices.size > 0) {
-            resultsWithTiming.splice(0, resultsWithTiming.length,
-              ...resultsWithTiming.filter((_: any, i: number) => !irrelevantIndices.has(i))
-            )
-          }
         }
 
         const finalResults = resultsWithTiming.map((r: any) => ({
