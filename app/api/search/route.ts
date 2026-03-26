@@ -48,10 +48,19 @@ const editorialRe = /reaction|compilation|explained|analysis|breakdown|fact.?che
 
 function isEditorial(title: string): boolean { return editorialRe.test(title) }
 
-function classifyVideoSource(channelName: string, title: string): 'raw' | 'secondary' | 'aggregated' {
+function isMajorOutlet(channelName: string): boolean {
   const lower = channelName.toLowerCase()
-  if (majorOutlets.some(o => lower.includes(o))) return 'aggregated'
+  return majorOutlets.some(o => {
+    if (o.includes(' ')) return lower.includes(o)  // multi-word entries: substring is distinctive enough
+    // Single-word entries: require word boundary to avoid "bbc-bashing" matching "bbc"
+    return new RegExp(`(^|[\\s|·•\\-\\/])${o.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s|·•\\-\\/]|$)`).test(lower)
+  })
+}
+
+function classifyVideoSource(channelName: string, title: string): 'raw' | 'secondary' | 'aggregated' {
+  if (isMajorOutlet(channelName)) return 'aggregated'
   if (isEditorial(title)) return 'aggregated'
+  const lower = channelName.toLowerCase()
   if (lower.includes('news') || lower.includes('tv') || lower.includes('media') || lower.includes('press')) return 'secondary'
   return 'raw'
 }
@@ -111,6 +120,11 @@ const noiseWords = new Set([
   // German
   'der','die','das','ein','eine','von','mit','für','bei','nach','über','durch',
   'oder','nicht','auch','wird','sind','haben','wurde','werden','kann','war',
+  // Russian / Ukrainian (Cyrillic)
+  'это','как','что','или','его','она','они','мне','мы','вы','он','не','на','за','по','из','от','при','под','над','всё','все','было','быть','будет','также','после','через','когда','где','который','которая','которые',
+  'це','як','що','або','його','вона','вони','ми','ви','він','на','за','по','із','від','при','під','над','усіх','було','бути','буде','також','після','через','коли','де','який','яка','які',
+  // Arabic
+  'في','من','إلى','على','هذا','هذه','هو','هي','لا','أن','أو','مع','كل','بعد','قبل','حتى','عند','بين','خلال','بعض','عن','إن','كان','التي','الذي','وقد','كما','ذلك',
 ])
 
 // ── Main handler ───────────────────────────────────────────────────────────
@@ -369,19 +383,27 @@ export async function GET(request: NextRequest) {
         }
 
         // Timing relative to earliest credible source.
-        // Anchor to agency/major first (reliable timestamps), then independent/raw,
-        // then absolute earliest. Unverified pre-posts will show as negative hours — that's intentional.
+        // Anchor to earliest credible source, cascading by credibility tier.
+        // To prevent tangential old articles from skewing the timeline, we compute a
+        // median timestamp and discard candidates more than 30 days before it.
+        const allTimes = allResults.map(r => new Date(r.publishedAt).getTime()).filter(t => !isNaN(t))
+        const medianTime = allTimes.length > 0
+          ? allTimes.slice().sort((a, b) => a - b)[Math.floor(allTimes.length / 2)]
+          : Date.now()
+        const OUTLIER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+
         const timeOf = (types: string[]) => {
           const ts = allResults
             .filter(r => types.includes(r.sourceType))
             .map(r => new Date(r.publishedAt).getTime())
-            .filter(t => !isNaN(t))
+            .filter(t => !isNaN(t) && t >= medianTime - OUTLIER_WINDOW_MS)
           return ts.length > 0 ? Math.min(...ts) : null
         }
-        const allTimes = allResults.map(r => new Date(r.publishedAt).getTime()).filter(t => !isNaN(t))
         const referenceTime =
           timeOf(['agency', 'major']) ??
-          timeOf(['agency', 'major', 'independent', 'raw']) ??
+          timeOf(['independent', 'raw']) ??
+          timeOf(['secondary', 'aggregated']) ??
+          timeOf(['unverified']) ??
           (allTimes.length > 0 ? Math.min(...allTimes) : Date.now())
         const resultsWithTiming = allResults.map(r => ({
           ...r,
@@ -414,27 +436,40 @@ export async function GET(request: NextRequest) {
           const otherVids = ytResults.filter(r => r.id !== refVideo?.id)
 
           const [visionRes, analysisRes] = await Promise.all([
-            refVideo && otherVids.length > 0
-              ? anthropicFetch({
-                  model: 'claude-sonnet-4-6',
-                  max_tokens: 128,
-                  messages: [{
-                    role: 'user',
-                    content: [
-                      { type: 'text', text: `Context: "${query}". Reference video below. Score each other video's visual similarity to the same physical scene (0–10). Return only a JSON array.` },
-                      { type: 'text', text: `REFERENCE — "${refVideo.title}":` },
-                      { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/hqdefault.jpg` } },
-                      { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/1.jpg` } },
-                      { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/2.jpg` } },
-                      { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/3.jpg` } },
-                      ...otherVids.flatMap((r: any, i: number) => [
-                        { type: 'text', text: `#${i + 1} — "${r.channel}":` },
-                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${r.id}/hqdefault.jpg` } },
-                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${r.id}/2.jpg` } },
-                      ]),
-                    ],
-                  }]
-                }).catch(() => null)
+            refVideo
+              ? otherVids.length > 0
+                ? anthropicFetch({
+                    model: 'claude-sonnet-4-6',
+                    max_tokens: 128,
+                    messages: [{
+                      role: 'user',
+                      content: [
+                        { type: 'text', text: `Context: "${query}". Reference video below. Score each other video's visual similarity to the same physical scene (0–10). Return only a JSON array of numbers.` },
+                        { type: 'text', text: `REFERENCE — "${refVideo.title}":` },
+                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/hqdefault.jpg` } },
+                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/1.jpg` } },
+                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/2.jpg` } },
+                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/3.jpg` } },
+                        ...otherVids.flatMap((r: any, i: number) => [
+                          { type: 'text', text: `#${i + 1} — "${r.channel}":` },
+                          { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${r.id}/hqdefault.jpg` } },
+                          { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${r.id}/2.jpg` } },
+                        ]),
+                      ],
+                    }]
+                  }).catch(() => null)
+                : anthropicFetch({
+                    // Single video: score its visual relevance to the claimed event directly
+                    model: 'claude-sonnet-4-6',
+                    max_tokens: 32,
+                    messages: [{
+                      role: 'user',
+                      content: [
+                        { type: 'text', text: `Context: "${query}". Does this video thumbnail appear to show the claimed event? Score visual relevance 0–10. Return only a JSON array with one number: [score]` },
+                        { type: 'image', source: { type: 'url', url: `https://img.youtube.com/vi/${refVideo.id}/hqdefault.jpg` } },
+                      ],
+                    }]
+                  }).catch(() => null)
               : Promise.resolve(null),
 
             anthropicFetch({
@@ -443,7 +478,7 @@ export async function GET(request: NextRequest) {
               messages: [{
                 role: 'user',
                 content: `Analyze this news claim and its sources for credibility. Respond with JSON only (no markdown):
-{"narrative":"max 100 words: direct credibility verdict — are serious outlets covering it? does the source mix suggest real or fabricated? mention agency presence or absence","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10}
+{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10}
 
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
 simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
@@ -461,16 +496,21 @@ ${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.titl
             try {
               const raw = visionRes?.content?.[0]?.text ?? '[]'
               const scores: number[] = JSON.parse(raw.match(/\[[\d.,\s]+\]/)?.[0] ?? '[]')
-              otherVids.forEach((r: any, i: number) => {
-                if (typeof scores[i] === 'number') visualScores[r.id] = Math.max(0, Math.min(10, scores[i]))
-              })
+              if (otherVids.length > 0) {
+                otherVids.forEach((r: any, i: number) => {
+                  if (typeof scores[i] === 'number') visualScores[r.id] = Math.max(0, Math.min(10, scores[i]))
+                })
+              } else {
+                // Single video: score goes directly to refVideo
+                if (typeof scores[0] === 'number') visualScores[refVideo.id] = Math.max(0, Math.min(10, scores[0]))
+              }
             } catch {}
           }
 
           // Parse analysis
           try {
             const text  = analysisRes?.content?.[0]?.text ?? '{}'
-            const match = text.match(/\{[\s\S]*?\}/)
+            const match = text.match(/\{[\s\S]*\}/)
             const parsed = JSON.parse(match?.[0] ?? '{}')
             narrative        = parsed.narrative?.trim() ?? ''
             outrageScore     = typeof parsed.outrageScore     === 'number' ? Math.max(0, Math.min(10, parsed.outrageScore))     : 5
@@ -487,26 +527,60 @@ ${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.titl
         }))
 
         // ── Fact-check detection ──────────────────────────────────────────
-        const factCheckHits = (factCheckData?.articles ?? []).filter((a: any) =>
-          FACTCHECK_DOMAINS.some(d => (a.url ?? '').includes(d))
-        ).slice(0, 3).map((a: any) => ({
+        // Only count fact-check articles that are actually about this claim:
+        // require that at least one named entity OR 30% of query words appear in title+description.
+        const factCheckHits = (factCheckData?.articles ?? []).filter((a: any) => {
+          if (!FACTCHECK_DOMAINS.some(d => (a.url ?? '').includes(d))) return false
+          const text = ((a.title ?? '') + ' ' + (a.description ?? '')).toLowerCase()
+          if (namedEntityKws.some(e => text.includes(e))) return true
+          const kwHits = regularKws.filter(kw => text.includes(kw)).length
+          return kwHits >= Math.max(1, Math.ceil(regularKws.length * 0.3))
+        }).slice(0, 3).map((a: any) => ({
           title: a.title,
           url: a.url,
           source: a.source?.name ?? 'Fact-checker',
         }))
         const debunked = factCheckHits.length > 0
 
-        // ── Credibility-aware scoring ─────────────────────────────────────
-        // Agencies & major outlets are positive signals.
-        // Unverified sources with high outrage are penalized.
+        // ── Credibility-aware scoring (single authoritative calculation) ──
         const agencyCount = finalResults.filter((r: any) => r.sourceType === 'agency').length
-        const majorCount  = finalResults.filter((r: any) => r.sourceType === 'major').length
         const outrageMultiplier = outrageScore >= 8 ? 0.1 : outrageScore >= 6 ? 0.4 : outrageScore >= 4 ? 0.75 : 1.0
-        const credibilityWeightedScore =
-          agencyCount * 4 +
-          majorCount  * 2 +
-          finalResults.filter((r: any) => r.sourceType === 'independent').length * 1 * outrageMultiplier +
-          finalResults.filter((r: any) => ['unverified','raw','secondary','aggregated'].includes(r.sourceType)).length * 0.5 * outrageMultiplier
+
+        // Visual multiplier: high visual match boosts credible sources; unverified get no bonus
+        const visualMult = (r: any): number => {
+          if (r.visualScore === null || r.visualScore === undefined) return 1.0
+          if (r.sourceType === 'unverified') return r.visualScore >= 3 ? 1.0 : 0.8
+          if (r.visualScore >= 7) return 1.5
+          if (r.visualScore >= 3) return 1.0
+          return 0.8
+        }
+
+        // Unverified cap: 10 re-uploads of the same clip ≠ 10 independent sources
+        const UNVERIFIED_CAP = 1.5
+
+        // Raw footage captures the physical scene — penalize less than editorial sources for outrage.
+        // High outrage can be intrinsic to the event itself (fire, attack), not manipulation.
+        const rawOutrageMultiplier = outrageScore >= 8 ? 0.5 : outrageScore >= 6 ? 0.7 : 1.0
+
+        const credibilityWeightedScore = (() => {
+          let total = 0
+          let unverifiedTotal = 0
+          for (const r of finalResults) {
+            const weight = SOURCE_WEIGHTS[r.sourceType] ?? 1
+            const outrMult = (r.sourceType === 'agency' || r.sourceType === 'major')
+              ? 1.0
+              : r.sourceType === 'raw'
+                ? rawOutrageMultiplier
+                : outrageMultiplier
+            const contribution = weight * outrMult * visualMult(r)
+            if (r.sourceType === 'unverified') {
+              unverifiedTotal = Math.min(unverifiedTotal + contribution, UNVERIFIED_CAP)
+            } else {
+              total += contribution
+            }
+          }
+          return total + unverifiedTotal
+        })()
 
         send({
           result: {
@@ -519,6 +593,7 @@ ${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.titl
               debunked,
               agencyCount,
               factCheckCount: factCheckHits.length,
+              outrageMultiplier,
             },
             results: finalResults,
             narrative,

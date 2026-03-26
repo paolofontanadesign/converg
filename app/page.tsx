@@ -34,8 +34,17 @@ const STOP_WORDS = new Set([
   'live','breaking','watch','video','news','update','full','official','raw','footage',
   'new','just','now','today','how','why','what','when','who','which','has','have','had',
   'they','their','there','then','than','into','been','get','got','via',
-  // French / Spanish / German
-  'del','der','die','lors','dans','pour','avec','sont','dont','leur','tout','plus','tres','muy','pero',
+  // Italian
+  'il','lo','la','gli','le','un','una','uno','del','della','dello','dei','delle','degli',
+  'che','con','per','nel','nella','negli','nelle','dal','dalla','dai','dalle','sul','sulla',
+  'sui','sulle','tra','fra','sono','stato','stata','stati','state','essere','fare','fatto',
+  'hanno','aveva','erano','viene','anche','molto','come','dove','quando','cosa',
+  'questo','questa','questi','queste','quello','quella','quelli','quelle','loro','tutto',
+  'tutti','tutte','ancora','dopo','prima','mentre','però','quindi','oppure','senza',
+  // French / Spanish / German / Portuguese
+  'del','los','las','una','por','con','para','como','más','pero','sobre','cuando','esto','están','son','fue','han','muy',
+  'les','des','dans','sur','pas','plus','par','mais','qui','que','ont','cette','leur','leurs','tout','tous',
+  'der','die','das','ein','eine','von','mit','für','bei','nach','über','durch','oder','nicht','auch','wird','sind',
   // Russian / Ukrainian (Cyrillic)
   'это','как','что','или','его','она','они','мне','мы','вы','он','не','на','за','по','из','от','при','под','над','всё','все','было','быть','будет','также','после','через','когда','где','который','которая','которые',
   'це','як','що','або','його','вона','вони','ми','ви','він','не','на','за','по','із','від','при','під','над','усіх','було','бути','буде','також','після','через','коли','де','який','яка','які',
@@ -592,7 +601,7 @@ function KeywordFrequency({ results }: { results: any[] }) {
     for (const w of words) {
       if (w.length < 3) continue
       if (/^\p{N}+$/u.test(w)) continue  // skip pure numbers (years, ids…)
-      const lower = w.toLowerCase()
+      const lower = w.normalize('NFC').toLowerCase()
       if (STOP_WORDS.has(lower)) continue
       freq[lower] = (freq[lower] ?? 0) + 1
     }
@@ -1194,8 +1203,8 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
         {narrative && (
           <div style={{ flex: '1 1 340px' }}>
             <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '10px' }}>AI assessment</p>
-            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: '16px', fontStyle: 'italic', color: '#c8c8c4', lineHeight: 1.75 }}>
-              "{narrative}"
+            <p style={{ fontFamily: SANS, fontSize: '15px', color: '#c8c8c4', lineHeight: 1.65 }}>
+              {narrative}
             </p>
           </div>
         )}
@@ -1243,6 +1252,11 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
             Visual analysis based on auto-generated thumbnails — accuracy varies
           </span>
         )}
+        {outrageMultiplier < 1.0 && (
+          <span style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a' }}>
+            Score penalized {Math.round((1 - outrageMultiplier) * 100)}% — high outrage signal detected
+          </span>
+        )}
       </div>
 
       {/* Score bar */}
@@ -1265,6 +1279,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [narrative, setNarrative] = useState<string>('')
   const [aiScores, setAiScores] = useState<{ outrage: number; simplicity: number; credibility: number }>({ outrage: 5, simplicity: 5, credibility: 5 })
+  const [outrageMultiplier, setOutrageMultiplier] = useState(1.0)
+  const [serverCorroborationScore, setServerCorroborationScore] = useState<number | null>(null)
   const [debunked, setDebunked] = useState(false)
   const [agencyCount, setAgencyCount] = useState(0)
   const [factCheckArticles, setFactCheckArticles] = useState<{ title: string; url: string; source: string }[]>([])
@@ -1278,13 +1294,16 @@ export default function Home() {
     return 0.8
   }
 
-  // Cap total unverified contribution: 10 re-uploads of the same clip don't equal 10 independent sources
+  // Local score — mirrors backend logic exactly; used as fallback before server responds
   const UNVERIFIED_CAP = 1.5
   const corroborationScore = (() => {
     let total = 0
     let unverifiedTotal = 0
     for (const r of results) {
-      const contribution = (SOURCE_WEIGHTS[r.sourceType] ?? 1) * visualMultiplier(r)
+      const weight = SOURCE_WEIGHTS[r.sourceType] ?? 1
+      const rawOutrMult = aiScores.outrage >= 8 ? 0.5 : aiScores.outrage >= 6 ? 0.7 : 1.0
+      const outrMult = (r.sourceType === 'agency' || r.sourceType === 'major') ? 1.0 : r.sourceType === 'raw' ? rawOutrMult : outrageMultiplier
+      const contribution = weight * outrMult * visualMultiplier(r)
       if (r.sourceType === 'unverified') {
         unverifiedTotal = Math.min(unverifiedTotal + contribution, UNVERIFIED_CAP)
       } else {
@@ -1340,6 +1359,8 @@ export default function Home() {
       .then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
     setNarrative('')
     setAiScores({ outrage: 5, simplicity: 5, credibility: 5 })
+    setOutrageMultiplier(1.0)
+    setServerCorroborationScore(null)
     setDebunked(false)
     setAgencyCount(0)
     setFactCheckArticles([])
@@ -1374,6 +1395,8 @@ export default function Home() {
               if (data.result.scores) {
                 const s = data.result.scores
                 setAiScores({ outrage: s.outrage ?? 5, simplicity: s.simplicity ?? 5, credibility: s.credibility ?? 5 })
+                setOutrageMultiplier(s.outrageMultiplier ?? 1.0)
+                setServerCorroborationScore(typeof s.corroboration === 'number' ? s.corroboration : null)
                 setDebunked(s.debunked ?? false)
                 setAgencyCount(s.agencyCount ?? 0)
               }
@@ -1441,7 +1464,7 @@ export default function Home() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
             disabled={loading}
-            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
+            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: isMobile ? '16px' : '13px', color: '#0f0f0e', background: 'transparent' }}
           />
           {mounted && charsNeeded > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
@@ -1510,7 +1533,7 @@ export default function Home() {
             checkedQuery={checkedQuery}
             results={results}
             narrative={narrative}
-            corroborationScore={corroborationScore}
+            corroborationScore={serverCorroborationScore ?? corroborationScore}
             corroborationLabel={corroborationLabel}
             hasStrongVisual={hasStrongVisual}
             hasAnyVisual={hasAnyVisual}
