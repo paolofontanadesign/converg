@@ -1464,7 +1464,7 @@ export default function Home() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
             disabled={loading}
-            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: isMobile ? '16px' : '13px', color: '#0f0f0e', background: 'transparent' }}
+            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
           />
           {mounted && charsNeeded > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
