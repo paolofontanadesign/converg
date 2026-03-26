@@ -18,10 +18,12 @@ function loadEnvLocal(): Record<string, string> {
 const localEnv = loadEnvLocal();
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   env: {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || localEnv.ANTHROPIC_API_KEY || "",
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || localEnv.YOUTUBE_API_KEY || "",
     BING_API_KEY: process.env.BING_API_KEY || localEnv.BING_API_KEY || "",
+    NEWSAPI_KEY: process.env.NEWSAPI_KEY || localEnv.NEWSAPI_KEY || "",
   },
 };
 
