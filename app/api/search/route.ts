@@ -131,17 +131,14 @@ export async function GET(request: NextRequest) {
         const anthropicKey = process.env.ANTHROPIC_API_KEY
         const bingKey     = process.env.BING_API_KEY
 
-        // ── Step 0: Extract keywords ──────────────────────────────────────
+        // ── Step 0: Fallback keyword extraction (used if AI interpretation fails) ──
         send({ step: 0 })
 
-        // Capitalised words are strong named-entity signals in any language
         const capitalWords = (query.match(/\b[A-Z][a-zA-Z]{2,}\b/g) ?? [])
-        // All significant words regardless of language
         const allWords = query
           .replace(/[^a-zA-ZÀ-ÿ0-9\s]/g, ' ')
           .split(/\s+/)
           .filter(w => w.length > 3 && !noiseWords.has(w.toLowerCase()))
-
         const seen = new Set<string>()
         const keywordParts: string[] = []
         for (const w of [...capitalWords, ...allWords]) {
@@ -149,34 +146,47 @@ export async function GET(request: NextRequest) {
           if (!seen.has(lower)) { seen.add(lower); keywordParts.push(w) }
           if (keywordParts.length >= 6) break
         }
-        // Use the raw query as fallback so non-English queries still work
         const keywordStr = keywordParts.join(' ') || query.trim()
 
-        const namedEntityKws = [...new Set([
+        // Default relevance filters (overridden by AI interpretation below)
+        let namedEntityKws: string[] = [...new Set([
           ...capitalWords.map(w => w.toLowerCase()),
           ...(query.match(/\b\d{2,}\b/g) ?? []),
         ])]
-        const regularKws = keywordParts.map(w => w.toLowerCase()).filter(w => !namedEntityKws.includes(w))
+        let regularKws = keywordParts.map(w => w.toLowerCase()).filter(w => !namedEntityKws.includes(w))
 
-        // ── Step 1: Translate to English if needed ────────────────────────
+        // Default search queries (fallback)
+        let searchQueries = [keywordStr, keywordStr + ' footage', keywordStr + ' debunked fact check']
+
+        // ── Step 1: AI query interpretation ──────────────────────────────
         send({ step: 1 })
 
-        const queryLang = detectLanguage(query)
-        let searchStr = keywordStr  // default: use original keywords
-
-        if (queryLang !== 'en' && anthropicKey) {
+        if (anthropicKey) {
           try {
             const res = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({
                 model: 'claude-haiku-4-5-20251001',
-                max_tokens: 60,
-                messages: [{ role: 'user', content: `Extract 5-6 concise English search keywords from this news description. Reply with only the keywords space-separated, no punctuation, no explanation:\n${query}` }],
+                max_tokens: 250,
+                messages: [{ role: 'user', content: `You are a fact-checking assistant. Given a news claim or description in any language, return a JSON object with:\n- "search_queries": array of exactly 3 distinct English search query strings: [0] for finding raw footage/eyewitness video evidence, [1] for news coverage, [2] for debunking/fact-checking\n- "entities": array of 3-6 key entities (people, places, objects, events) as short English strings\n\nRules: be specific, avoid generic terms, use the actual subject matter.\nReply with ONLY valid JSON, no markdown, no explanation.\n\nQuery: ${query}` }],
               }),
             }).then(r => r.json())
-            const translated = res?.content?.[0]?.text?.trim()
-            if (translated && translated.length > 0) searchStr = translated
+            const text = res?.content?.[0]?.text?.trim()
+            if (text) {
+              const jsonMatch = text.match(/\{[\s\S]*\}/)
+              const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text)
+              if (Array.isArray(parsed.search_queries) && parsed.search_queries.length >= 3) {
+                searchQueries = parsed.search_queries.slice(0, 3)
+              }
+              if (Array.isArray(parsed.entities) && parsed.entities.length > 0) {
+                namedEntityKws = parsed.entities.map((e: string) => e.toLowerCase().trim())
+                regularKws = searchQueries
+                  .flatMap(q => q.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+                  .filter((w, i, arr) => arr.indexOf(w) === i)
+                  .filter(w => !namedEntityKws.some(e => e.includes(w)))
+              }
+            }
           } catch {}
         }
 
@@ -186,28 +196,28 @@ export async function GET(request: NextRequest) {
         const [ytResponses, newsData, factCheckData, tiktokData, instaData] = await Promise.all([
           youtubeKey
             ? Promise.all([
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr + ' footage')}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr + ' video')}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr)}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQueries[0])}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQueries[1])}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQueries[2])}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
                 fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query.trim())}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
               ])
             : Promise.resolve([{ items: [] }]),
 
           newsKey
-            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchStr)}&sortBy=relevancy&pageSize=20&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
+            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQueries[0])}&sortBy=relevancy&pageSize=20&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
             : Promise.resolve({ articles: [] }),
 
-          // Dedicated fact-check search — looks for debunking on known fact-check domains
+          // Dedicated fact-check search
           newsKey
-            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchStr + ' fact check debunked hoax false')}&sortBy=relevancy&pageSize=10&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
+            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQueries[2] + ' fact check debunked hoax false')}&sortBy=relevancy&pageSize=10&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
             : Promise.resolve({ articles: [] }),
 
           bingKey
-            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchStr + ' site:tiktok.com')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchQueries[0] + ' site:tiktok.com')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
             : Promise.resolve(null),
 
           bingKey
-            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchStr + ' site:instagram.com/reel')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchQueries[1] + ' site:instagram.com/reel')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
             : Promise.resolve(null),
         ])
 
@@ -236,8 +246,20 @@ export async function GET(request: NextRequest) {
           return regularHits >= minHits
         }
 
-        // YouTube — tag raw-query results (index 3) so they skip the relevance filter:
-        // YouTube already ranks them by relevance for the user's exact query (including non-English).
+        // For raw-query results (original language), check relevance against the original query words
+        // (not the translated English keywords) so Italian/non-English titles are matched correctly.
+        const origQueryWords = [...new Set(
+          query.toLowerCase().split(/\s+/)
+            .map(w => w.replace(/[^a-zA-ZÀ-ÿ\u0400-\u04ff\u0600-\u06ff]/g, ''))
+            .filter(w => w.length > 3)
+        )]
+        const rawQueryRelevant = (title: string) => {
+          if (origQueryWords.length === 0) return true
+          const lower = title.toLowerCase()
+          const hits = origQueryWords.filter(w => lower.includes(w)).length
+          return hits >= Math.max(1, Math.ceil(origQueryWords.length * 0.3))
+        }
+
         const seenVideoIds = new Set<string>()
         const seenChannels = new Set<string>()
         const videoItems: any[] = [
@@ -252,7 +274,7 @@ export async function GET(request: NextRequest) {
             seenVideoIds.add(id); return true
           })
           .filter((item: any) => !isEditorial(item.snippet.title))
-          .filter((item: any) => item._rawQuery || relevantEnough(item.snippet.title))
+          .filter((item: any) => item._rawQuery ? rawQueryRelevant(item.snippet.title) : relevantEnough(item.snippet.title))
           .filter((item: any) => {
             const cid = item.snippet.channelId
             if (seenChannels.has(cid)) return false

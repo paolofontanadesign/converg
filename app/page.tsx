@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 
 const steps = [
   { key: 'metadata', label: 'Metadata extraction', detail: 'Title · timestamp · location signals' },
-  { key: 'query', label: 'Corroboration query generation', detail: 'Building footage search variants...' },
+  { key: 'query', label: 'AI claim interpretation', detail: 'Extracting entities · building search strategy...' },
   { key: 'sources', label: 'Searching for independent footage', detail: 'YouTube API · scanning for raw footage...' },
   { key: 'analysis', label: 'Corroboration analysis', detail: 'Classifying footage sources · scoring independence' },
   { key: 'ai', label: 'AI visual analysis', detail: 'Comparing scene thumbnails · synthesising verdict...' },
