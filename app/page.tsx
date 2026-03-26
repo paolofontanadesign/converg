@@ -1458,9 +1458,9 @@ export default function Home() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header style={{ borderBottom: '1px solid #0f0f0e', padding: isMobile ? '16px 20px' : '18px 40px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '26px', fontWeight: 700, color: '#0f0f0e' }}>
+        <a href="/" style={{ fontFamily: "'Playfair Display', serif", fontSize: '26px', fontWeight: 700, color: '#0f0f0e', textDecoration: 'none' }}>
           Converg<span style={{ color: '#c8472a' }}>.</span>
-        </span>
+        </a>
         <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
           News corroboration engine
         </span>
