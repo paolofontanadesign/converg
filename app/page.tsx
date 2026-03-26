@@ -1479,7 +1479,7 @@ export default function Home() {
         <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', marginBottom: '48px', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
           <input
             type="text"
-            placeholder="Describe the news event to verify…"
+            placeholder="Describe the news…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
