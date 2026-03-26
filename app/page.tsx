@@ -904,67 +904,84 @@ function OverlapMatrix({ results }: { results: any[] }) {
 
 const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, unverified: 3, raw: 4, secondary: 5, aggregated: 6 }
 
+// Detects sources that are debunking/fact-checking the claim rather than spreading it
+const debunkRe = /bufala|bufale|debunked?|fact.?check|hoax|fake.news|smentis|disinformation|misinformation|è.falso|it.s.fake|it.s.false|not.true|untrue/i
+const isDebunker = (title: string) => debunkRe.test(title)
+
+function ResultsTable({ rows, debunked, darkBg }: { rows: any[]; debunked: boolean; darkBg: boolean }) {
+  const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '16px 110px 1fr auto auto', gap: '0', borderTop: '1px solid #edeae3' }}>
+      {['', 'Source', 'Headline', 'Views', ''].map((h, i) => (
+        <div key={i} style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#888680', padding: '8px 10px 8px 0', borderBottom: '2px solid #0f0f0e' }}>{h}</div>
+      ))}
+      {rows.map((r, i) => {
+        const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
+        const isArticle = ['agency','major','independent','unverified'].includes(r.sourceType)
+        return (
+          <Fragment key={i}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0ede6', paddingTop: '12px', paddingBottom: '12px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+            </div>
+            <div style={{ padding: '12px 10px 12px 0', borderBottom: '1px solid #f0ede6' }}>
+              <div style={{ fontFamily: MONO, fontSize: '10px', color: darkBg ? '#f7f4ef' : '#0f0f0e', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100px' }}>{r.channel}</div>
+              <div style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</div>
+            </div>
+            <div style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6' }}>
+              <div style={{ fontFamily: SANS, fontSize: '12px', color: darkBg ? '#c8c8c4' : '#3a3a38', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</div>
+            </div>
+            <div style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', whiteSpace: 'nowrap' }}>{fmtViews(r.viewCount ?? 0)}</span>
+            </div>
+            <div style={{ padding: '12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
+              <a href={r.url} target="_blank" rel="noopener noreferrer"
+                 style={{ fontFamily: MONO, fontSize: '9px', color, textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${color}`, paddingBottom: '1px', whiteSpace: 'nowrap' }}>
+                {isArticle ? 'Read →' : 'Watch →'}
+              </a>
+            </div>
+          </Fragment>
+        )
+      })}
+    </div>
+  )
+}
+
 function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debunked: boolean; suspicious: boolean }) {
   if (results.length === 0) return null
 
   const sorted = [...results].sort((a, b) => (SOURCE_RANK[a.sourceType] ?? 9) - (SOURCE_RANK[b.sourceType] ?? 9))
+
+  // Separate sources that spread the claim from those that debunked it
+  const spreadRows   = sorted.filter(r => !isDebunker(r.title))
+  const debunkRows   = sorted.filter(r =>  isDebunker(r.title))
+
   const title = debunked ? 'Who fell for it' : suspicious ? 'Who spread this claim' : 'Who ran the story'
   const sub   = debunked
-    ? 'These outlets published the false claim as fact. They did not wait for independent confirmation.'
+    ? 'These outlets amplified the false claim. Debunking sources are listed separately below.'
     : suspicious
     ? 'These sources ran the story without sufficient verification. Not victims — they chose to publish.'
     : 'Sources that covered this story. Publishing is a choice — sorted by how much their verification process is worth trusting.'
 
-  const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
-
   return (
-    <div style={{}}>
+    <div>
       <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: debunked ? '#c8472a' : '#0f0f0e', marginBottom: '6px' }}>{title}</p>
-      <p style={{ fontFamily: SANS, fontSize: '13px', color: debunked ? '#888680' : '#888680', marginBottom: debunked ? '12px' : '24px' }}>{sub}</p>
+      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: debunked ? '12px' : '24px' }}>{sub}</p>
       {debunked && (
         <div style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8472a', animation: 'pulse 1s ease-in-out infinite' }} />
           Claim independently debunked by fact-checkers
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: '16px 110px 1fr auto auto', gap: '0', borderTop: '1px solid #edeae3' }}>
-        {/* Header row */}
-        {['', 'Source', 'Headline', 'Views', ''].map((h, i) => (
-          <div key={i} style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#888680', padding: '8px 10px 8px 0', borderBottom: '2px solid #0f0f0e' }}>{h}</div>
-        ))}
-        {sorted.map((r, i) => {
-          const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
-          const isArticle = ['agency','major','independent','unverified'].includes(r.sourceType)
-          return (
-            <Fragment key={i}>
-              {/* Color dot */}
-              <div key={`dot-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0ede6', paddingTop: '12px', paddingBottom: '12px' }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-              </div>
-              {/* Source name + type */}
-              <div key={`src-${i}`} style={{ padding: '12px 10px 12px 0', borderBottom: '1px solid #f0ede6' }}>
-                <div style={{ fontFamily: MONO, fontSize: '10px', color: debunked ? '#f7f4ef' : '#0f0f0e', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100px' }}>{r.channel}</div>
-                <div style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</div>
-              </div>
-              {/* Headline */}
-              <div key={`title-${i}`} style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6' }}>
-                <div style={{ fontFamily: SANS, fontSize: '12px', color: debunked ? '#c8c8c4' : '#3a3a38', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</div>
-              </div>
-              {/* Views */}
-              <div key={`views-${i}`} style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', whiteSpace: 'nowrap' }}>{fmtViews(r.viewCount ?? 0)}</span>
-              </div>
-              {/* Link */}
-              <div key={`link-${i}`} style={{ padding: '12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
-                <a href={r.url} target="_blank" rel="noopener noreferrer"
-                   style={{ fontFamily: MONO, fontSize: '9px', color, textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${color}`, paddingBottom: '1px', whiteSpace: 'nowrap' }}>
-                  {isArticle ? 'Read →' : 'Watch →'}
-                </a>
-              </div>
-            </Fragment>
-          )
-        })}
-      </div>
+
+      {spreadRows.length > 0 && <ResultsTable rows={spreadRows} debunked={debunked} darkBg={debunked} />}
+
+      {debunkRows.length > 0 && (
+        <div style={{ marginTop: spreadRows.length > 0 ? '32px' : '0' }}>
+          <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1a6b4a', marginBottom: '6px' }}>Who debunked it</p>
+          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '16px' }}>These sources investigated and contradicted the claim.</p>
+          <ResultsTable rows={debunkRows} debunked={false} darkBg={debunked} />
+        </div>
+      )}
     </div>
   )
 }
