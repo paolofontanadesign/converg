@@ -249,11 +249,15 @@ export async function GET(request: NextRequest) {
         const relevantEnough = (text: string, strict = false) => {
           if (namedEntityKws.length === 0 && regularKws.length === 0) return true
           const lower = text.toLowerCase()
-          const entityHit = namedEntityKws.some(kw => lower.includes(kw))
-          if (entityHit) return true
+          // A substantive entity: phrase (contains space/hyphen) OR word ≥5 chars.
+          // Short generic words (e.g. "egg", "ufo") must not match alone — too many false positives.
+          const strongEntityHit = namedEntityKws.some(kw =>
+            (kw.length >= 5 || kw.includes(' ') || kw.includes('-')) && lower.includes(kw)
+          )
+          if (strongEntityHit) return true
+          // Fallback: two or more entity matches (even short ones) together
+          if (namedEntityKws.filter(kw => lower.includes(kw)).length >= 2) return true
           const regularHits = regularKws.filter(kw => lower.includes(kw)).length
-          // Without named entities (no proper nouns / numbers) the query is purely descriptive.
-          // A single keyword hit produces too many false positives — require proportional coverage.
           const minHits = namedEntityKws.length === 0
             ? Math.max(2, Math.ceil(regularKws.length * 0.4))
             : (strict ? 2 : 1)
@@ -441,7 +445,7 @@ export async function GET(request: NextRequest) {
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
 simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
 credibilityScore: overall credibility of the claim based on who covers it and how (0=almost certainly false, 5=unverified, 10=confirmed by credible sources)
-irrelevantIndices: 0-based indices of sources that are clearly about a DIFFERENT topic and not related to the claim (e.g. a UFO result when the claim is about a nuclear reactor, or vice versa). Be aggressive — mark any result whose title does not directly relate to the specific claim.
+irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim — e.g. a UFO sighting video when the claim is about a nuclear reactor design, or a sports article when the claim is about a flood. Keep results that discuss the same claim in any language, any framing, or any angle (including debunks, news coverage, raw footage). Do NOT mark a result just because it is in a different language or uses different words for the same subject.
 
 Claim: "${query}"
 Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
