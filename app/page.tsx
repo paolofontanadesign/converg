@@ -1342,7 +1342,7 @@ export default function Home() {
     const checkMobile = () => setIsMobile(window.innerWidth < 640)
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    fetch('/api/recent-queries').then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
+    try { setRecentQueries(JSON.parse(localStorage.getItem('convergRecentQueries') ?? '[]')) } catch {}
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
@@ -1355,8 +1355,11 @@ export default function Home() {
     setSearched(false)
     setCheckedQuery('')
     setError(null)
-    fetch('/api/recent-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query.trim() }) })
-      .then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
+    try {
+      const updated = [query.trim(), ...recentQueries.filter(r => r !== query.trim())].slice(0, 10)
+      localStorage.setItem('convergRecentQueries', JSON.stringify(updated))
+      setRecentQueries(updated)
+    } catch {}
     setNarrative('')
     setAiScores({ outrage: 5, simplicity: 5, credibility: 5 })
     setOutrageMultiplier(1.0)
@@ -1472,7 +1475,7 @@ export default function Home() {
             </span>
           )}
           <button className="analyze-btn" onClick={analyze} disabled={loading || (mounted && charsNeeded > 0)}
-            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 24px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s' }}>
+            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 14px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
             {loading ? '...' : 'Analyze →'}
           </button>
         </div>

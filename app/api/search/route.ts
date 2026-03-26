@@ -478,15 +478,16 @@ export async function GET(request: NextRequest) {
               messages: [{
                 role: 'user',
                 content: `Analyze this news claim and its sources for credibility. Respond with JSON only (no markdown):
-{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10}
+{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
 
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
 simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
 credibilityScore: overall credibility of the claim based on who covers it and how (0=almost certainly false, 5=unverified, 10=confirmed by credible sources)
+irrelevantIndices: 0-based indices of sources that are clearly about a DIFFERENT topic and not related to the claim (e.g. a UFO result when the claim is about a nuclear reactor, or vice versa). Be conservative — only mark clearly off-topic results.
 
 Claim: "${query}"
 Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
-${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.title, source: r.channel, type: r.sourceType, platform: r.platform, hours: r.hoursAfterSource, lang: r.language })))}`,
+${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i, title: r.title, source: r.channel, type: r.sourceType, platform: r.platform, hours: r.hoursAfterSource, lang: r.language })))}`,
               }]
             }).catch(() => null),
           ])
@@ -508,6 +509,7 @@ ${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.titl
           }
 
           // Parse analysis
+          const irrelevantIndices = new Set<number>()
           try {
             const text  = analysisRes?.content?.[0]?.text ?? '{}'
             const match = text.match(/\{[\s\S]*\}/)
@@ -516,9 +518,21 @@ ${JSON.stringify(resultsWithTiming.slice(0, 14).map((r: any) => ({ title: r.titl
             outrageScore     = typeof parsed.outrageScore     === 'number' ? Math.max(0, Math.min(10, parsed.outrageScore))     : 5
             simplicityScore  = typeof parsed.simplicityScore  === 'number' ? Math.max(0, Math.min(10, parsed.simplicityScore))  : 5
             credibilityScore = typeof parsed.credibilityScore === 'number' ? Math.max(0, Math.min(10, parsed.credibilityScore)) : 5
+            if (Array.isArray(parsed.irrelevantIndices)) {
+              for (const idx of parsed.irrelevantIndices) {
+                if (typeof idx === 'number') irrelevantIndices.add(idx)
+              }
+            }
           } catch {}
 
-          send({ _debug: { outrageScore, simplicityScore, narrativeLen: narrative.length, vScores: visualScores } })
+          send({ _debug: { outrageScore, simplicityScore, narrativeLen: narrative.length, vScores: visualScores, irrelevantCount: irrelevantIndices.size } })
+
+          // Remove off-topic results identified by AI before scoring
+          if (irrelevantIndices.size > 0) {
+            resultsWithTiming.splice(0, resultsWithTiming.length,
+              ...resultsWithTiming.filter((_: any, i: number) => !irrelevantIndices.has(i))
+            )
+          }
         }
 
         const finalResults = resultsWithTiming.map((r: any) => ({
