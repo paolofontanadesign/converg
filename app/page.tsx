@@ -1074,8 +1074,8 @@ function UploadClock({ results }: { results: any[] }) {
 
 // ── Visual Verdict Hero ───────────────────────────────────────────────────────
 
-function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile }: {
-  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean
+function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile, outrageMultiplier }: {
+  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean; outrageMultiplier: number
 }) {
   const scoreColor = debunked ? '#c8472a'
     : agencyCount > 0 && aiScores.outrage < 6 ? '#1a6b4a'
@@ -1542,6 +1542,7 @@ export default function Home() {
             agencyCount={agencyCount}
             factCheckArticles={factCheckArticles}
             isMobile={isMobile}
+            outrageMultiplier={outrageMultiplier}
           />
 
           {results.length > 0 ? (
