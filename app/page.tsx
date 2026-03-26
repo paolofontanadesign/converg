@@ -28,12 +28,19 @@ const MONO = "'DM Mono', monospace"
 const SANS = "'DM Sans', sans-serif"
 
 const STOP_WORDS = new Set([
+  // English
   'the','a','an','in','of','to','and','for','is','on','at','by','from','with','as','its',
   'this','that','are','was','were','will','not','but','also','after','over','about','more',
   'live','breaking','watch','video','news','update','full','official','raw','footage',
   'new','just','now','today','how','why','what','when','who','which','has','have','had',
-  'they','their','there','then','than','into','been','get','got','via','del','der','die',
-  'lors','dans','pour','avec','sont','dont','leur','tout','plus','tres','muy','pero',
+  'they','their','there','then','than','into','been','get','got','via',
+  // French / Spanish / German
+  'del','der','die','lors','dans','pour','avec','sont','dont','leur','tout','plus','tres','muy','pero',
+  // Russian / Ukrainian (Cyrillic)
+  'это','как','что','или','его','она','они','мне','мы','вы','он','не','на','за','по','из','от','при','под','над','всё','все','было','быть','будет','также','после','через','когда','где','который','которая','которые',
+  'це','як','що','або','його','вона','вони','ми','ви','він','не','на','за','по','із','від','при','під','над','усіх','було','бути','буде','також','після','через','коли','де','який','яка','які',
+  // Arabic
+  'في','من','إلى','على','هذا','هذه','هو','هي','لا','أن','أو','مع','كل','بعد','قبل','حتى','عند','بين','خلال','بعض','عن','إن','كان','التي','الذي','وقد','كما','ذلك','هذه',
 ])
 
 // ── Shared tooltip ────────────────────────────────────────────────────────────
@@ -581,9 +588,10 @@ function KeywordFrequency({ results }: { results: any[] }) {
 
   const freq: Record<string, number> = {}
   for (const r of results) {
-    const words = r.title.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/)
+    const words = r.title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/)
     for (const w of words) {
-      if (w.length < 4) continue
+      if (w.length < 3) continue
+      if (/^\p{N}+$/u.test(w)) continue  // skip pure numbers (years, ids…)
       const lower = w.toLowerCase()
       if (STOP_WORDS.has(lower)) continue
       freq[lower] = (freq[lower] ?? 0) + 1
@@ -817,8 +825,8 @@ function OverlapMatrix({ results }: { results: any[] }) {
   if (results.length < 2 || results.length > 12) return null
 
   const wordSet = (r: any): Set<string> => new Set(
-    r.title.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/)
-      .filter((w: string) => w.length >= 4 && !STOP_WORDS.has(w.toLowerCase()))
+    r.title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/)
+      .filter((w: string) => w.length >= 3 && !/^\p{N}+$/u.test(w) && !STOP_WORDS.has(w.toLowerCase()))
       .map((w: string) => w.toLowerCase())
   )
   const sets = results.map(wordSet)
@@ -1261,18 +1269,31 @@ export default function Home() {
   const [agencyCount, setAgencyCount] = useState(0)
   const [factCheckArticles, setFactCheckArticles] = useState<{ title: string; url: string; source: string }[]>([])
 
-  // Visual score multiplier
+  // Visual score multiplier — unverified sources get no bonus (same clip re-uploaded ≠ independent corroboration)
   const visualMultiplier = (r: any): number => {
     if (r.visualScore === null || r.visualScore === undefined) return 1.0
+    if (r.sourceType === 'unverified') return r.visualScore >= 3 ? 1.0 : 0.8
     if (r.visualScore >= 7) return 1.5
     if (r.visualScore >= 3) return 1.0
     return 0.8
   }
 
-  const corroborationScore = results.reduce(
-    (sum, r) => sum + (SOURCE_WEIGHTS[r.sourceType] ?? 1) * visualMultiplier(r), 0
-  )
-  const hasStrongVisual = results.some(r => typeof r.visualScore === 'number' && r.visualScore >= 7)
+  // Cap total unverified contribution: 10 re-uploads of the same clip don't equal 10 independent sources
+  const UNVERIFIED_CAP = 1.5
+  const corroborationScore = (() => {
+    let total = 0
+    let unverifiedTotal = 0
+    for (const r of results) {
+      const contribution = (SOURCE_WEIGHTS[r.sourceType] ?? 1) * visualMultiplier(r)
+      if (r.sourceType === 'unverified') {
+        unverifiedTotal = Math.min(unverifiedTotal + contribution, UNVERIFIED_CAP)
+      } else {
+        total += contribution
+      }
+    }
+    return total + unverifiedTotal
+  })()
+  const hasStrongVisual = results.some(r => typeof r.visualScore === 'number' && r.visualScore >= 7 && r.sourceType !== 'unverified')
   const hasAnyVisual = results.some(r => typeof r.visualScore === 'number')
 
   // Credibility-based verdict (replaces simple corroboration count)
@@ -1295,17 +1316,23 @@ export default function Home() {
     : 'none'
 
   const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  const [recentQueries, setRecentQueries] = useState<string[]>([])
+  useEffect(() => {
+    setMounted(true)
+    fetch('/api/recent-queries').then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
+  }, [])
 
   const charCount = query.replace(/\s/g, '').length
-  const charsLeft = 50 - charCount
+  const charsNeeded = Math.max(0, 30 - charCount)
 
   const analyze = async () => {
-    if (!query.trim() || charCount > 50) return
+    if (!query.trim() || charsNeeded > 0) return
     setResults([])
     setSearched(false)
     setCheckedQuery('')
     setError(null)
+    fetch('/api/recent-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query.trim() }) })
+      .then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
     setNarrative('')
     setAiScores({ outrage: 5, simplicity: 5, credibility: 5 })
     setDebunked(false)
@@ -1382,25 +1409,26 @@ export default function Home() {
     <main style={{ background: '#f7f4ef', minHeight: '100vh' }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header style={{ borderBottom: '1px solid #0f0f0e', padding: '18px 40px', display: 'flex', alignItems: 'baseline', gap: '16px' }}>
+      <header style={{ borderBottom: '1px solid #0f0f0e', padding: '18px 40px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '26px', fontWeight: 700, color: '#0f0f0e' }}>
           Converg<span style={{ color: '#c8472a' }}>.</span>
         </span>
-        <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.08em', textTransform: 'uppercase', borderLeft: '1px solid #888680', paddingLeft: '16px' }}>
-          Multi-source corroboration engine
+        <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          News corroboration engine
         </span>
       </header>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
-      <div style={{ maxWidth: '760px', padding: '64px 40px 0' }}>
-        <p style={{ fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888680', marginBottom: '20px' }}>News corroboration</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, maxWidth: '760px', padding: '64px 40px 0' }}>
+        <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', marginBottom: '20px' }}>Converg is pure heuristics — source authority, emotional tone, and coverage rarity, cross-referenced.</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
           Describe a news event. Converg searches for corroboration across agencies, independent outlets and raw footage — then scores reliability based on source diversity, timing, language spread and outrage signals.
         </p>
-        <div style={{ border: `1px solid ${loading ? '#888680' : charsLeft < 0 ? '#c8472a' : '#0f0f0e'}`, background: 'white', display: 'flex', marginBottom: '48px', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
+        <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', marginBottom: '48px', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
           <input
             type="text"
             placeholder="Describe the news event to verify…"
@@ -1410,12 +1438,12 @@ export default function Home() {
             disabled={loading}
             style={{ flex: 1, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
           />
-          {mounted && (
-            <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charsLeft < 0 ? '#c8472a' : charsLeft <= 10 ? '#b07a3a' : '#888680', borderLeft: `1px solid ${charsLeft < 0 ? '#c8472a' : '#edeae3'}`, transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
-              {charsLeft}
+          {mounted && charsNeeded > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
+              {charsNeeded}
             </span>
           )}
-          <button className="analyze-btn" onClick={analyze} disabled={loading || charCount > 50}
+          <button className="analyze-btn" onClick={analyze} disabled={loading || (mounted && charsNeeded > 0)}
             style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 24px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s' }}>
             {loading ? '...' : 'Analyze →'}
           </button>
@@ -1453,6 +1481,20 @@ export default function Home() {
             <p style={{ fontFamily: SANS, fontSize: '13px', color: '#3a3a38' }}>{error}</p>
           </div>
         )}
+      </div>
+
+      {/* ── Recent queries (right column) ───────────────────────────────────── */}
+      {mounted && recentQueries.length > 0 && (
+        <div style={{ width: '260px', flexShrink: 0, borderLeft: '1px solid #edeae3', padding: '64px 32px 0 32px' }}>
+          <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', marginBottom: '20px' }}>Recently searched</p>
+          {recentQueries.map((q, i) => (
+            <button key={i} onClick={() => setQuery(q)}
+              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #edeae3', padding: '10px 0', fontFamily: MONO, fontSize: '11px', color: '#3a3a38', cursor: 'pointer', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
       </div>
 
       {/* ── Dashboard ──────────────────────────────────────────────────────── */}
@@ -1517,10 +1559,9 @@ export default function Home() {
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div style={{ background: '#0f0f0e', padding: '40px' }}>
-        <div style={{ maxWidth: '760px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#f7f4ef', lineHeight: 1.7 }}>
-            Converg searches for independent footage of the same event, not authenticity verification.<br />
-            Corroboration means other people filmed the same scene. No corroboration means the opposite — nothing more.
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.35, flex: '1 1 0', minWidth: 0 }}>
+            Converg is pure heuristics — source authority, emotional tone,<br />and coverage rarity, cross-referenced.
           </span>
           <a href="https://instagram.com/paolofontanadesign" target="_blank" rel="noopener noreferrer"
              style={{ fontFamily: MONO, fontSize: '11px', color: '#f7f4ef', textDecoration: 'none', letterSpacing: '0.06em', borderBottom: '1px solid #3a3a38', paddingBottom: '1px', whiteSpace: 'nowrap', flexShrink: 0 }}>

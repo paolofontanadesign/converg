@@ -209,21 +209,31 @@ export async function GET(request: NextRequest) {
           const entityHit = namedEntityKws.some(kw => lower.includes(kw))
           if (entityHit) return true
           const regularHits = regularKws.filter(kw => lower.includes(kw)).length
-          return regularHits >= (strict ? 2 : 1)
+          // Without named entities (no proper nouns / numbers) the query is purely descriptive.
+          // A single keyword hit produces too many false positives — require proportional coverage.
+          const minHits = namedEntityKws.length === 0
+            ? Math.max(2, Math.ceil(regularKws.length * 0.4))
+            : (strict ? 2 : 1)
+          return regularHits >= minHits
         }
 
-        // YouTube
+        // YouTube — tag raw-query results (index 3) so they skip the relevance filter:
+        // YouTube already ranks them by relevance for the user's exact query (including non-English).
         const seenVideoIds = new Set<string>()
         const seenChannels = new Set<string>()
-        const videoItems: any[] = ytResponses
-          .flatMap((d: any) => d.items ?? [])
+        const videoItems: any[] = [
+          ...(ytResponses[0]?.items ?? []).map((i: any) => ({ ...i, _rawQuery: false })),
+          ...(ytResponses[1]?.items ?? []).map((i: any) => ({ ...i, _rawQuery: false })),
+          ...(ytResponses[2]?.items ?? []).map((i: any) => ({ ...i, _rawQuery: false })),
+          ...(ytResponses[3]?.items ?? []).map((i: any) => ({ ...i, _rawQuery: true })),
+        ]
           .filter((item: any) => {
             const id = item.id?.videoId
             if (!id || seenVideoIds.has(id)) return false
             seenVideoIds.add(id); return true
           })
           .filter((item: any) => !isEditorial(item.snippet.title))
-          .filter((item: any) => relevantEnough(item.snippet.title))
+          .filter((item: any) => item._rawQuery || relevantEnough(item.snippet.title))
           .filter((item: any) => {
             const cid = item.snippet.channelId
             if (seenChannels.has(cid)) return false
@@ -317,12 +327,24 @@ export async function GET(request: NextRequest) {
           return
         }
 
-        // Timing relative to earliest source
-        const times = allResults.map(r => new Date(r.publishedAt).getTime()).filter(t => !isNaN(t))
-        const earliestTime = Math.min(...times)
+        // Timing relative to earliest credible source.
+        // Anchor to agency/major first (reliable timestamps), then independent/raw,
+        // then absolute earliest. Unverified pre-posts will show as negative hours — that's intentional.
+        const timeOf = (types: string[]) => {
+          const ts = allResults
+            .filter(r => types.includes(r.sourceType))
+            .map(r => new Date(r.publishedAt).getTime())
+            .filter(t => !isNaN(t))
+          return ts.length > 0 ? Math.min(...ts) : null
+        }
+        const allTimes = allResults.map(r => new Date(r.publishedAt).getTime()).filter(t => !isNaN(t))
+        const referenceTime =
+          timeOf(['agency', 'major']) ??
+          timeOf(['agency', 'major', 'independent', 'raw']) ??
+          (allTimes.length > 0 ? Math.min(...allTimes) : Date.now())
         const resultsWithTiming = allResults.map(r => ({
           ...r,
-          hoursAfterSource: Math.round((new Date(r.publishedAt).getTime() - earliestTime) / (1000 * 60 * 60) * 10) / 10,
+          hoursAfterSource: Math.round((new Date(r.publishedAt).getTime() - referenceTime) / (1000 * 60 * 60) * 10) / 10,
         }))
 
         // ── Step 4: AI analysis ───────────────────────────────────────────
@@ -341,8 +363,13 @@ export async function GET(request: NextRequest) {
             body: JSON.stringify(body),
           }).then(r => r.json())
 
+          const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, raw: 3, unverified: 4, secondary: 5, aggregated: 6 }
           const ytResults = resultsWithTiming.filter(r => r.platform === 'youtube')
-          const refVideo  = [...ytResults].sort((a, b) => a.hoursAfterSource - b.hoursAfterSource)[0]
+          // Prefer highest-credibility source as visual reference; use time as tiebreaker
+          const refVideo  = [...ytResults].sort((a, b) =>
+            (SOURCE_RANK[a.sourceType] ?? 9) - (SOURCE_RANK[b.sourceType] ?? 9) ||
+            a.hoursAfterSource - b.hoursAfterSource
+          )[0]
           const otherVids = ytResults.filter(r => r.id !== refVideo?.id)
 
           const [visionRes, analysisRes] = await Promise.all([
