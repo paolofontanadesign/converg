@@ -158,8 +158,27 @@ export async function GET(request: NextRequest) {
         ])]
         const regularKws = keywordParts.map(w => w.toLowerCase()).filter(w => !namedEntityKws.includes(w))
 
-        // ── Step 1: Build queries ─────────────────────────────────────────
+        // ── Step 1: Translate to English if needed ────────────────────────
         send({ step: 1 })
+
+        const queryLang = detectLanguage(query)
+        let searchStr = keywordStr  // default: use original keywords
+
+        if (queryLang !== 'en' && queryLang !== 'undetected' && anthropicKey) {
+          try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 60,
+                messages: [{ role: 'user', content: `Extract 5-6 concise English search keywords from this news description. Reply with only the keywords space-separated, no punctuation, no explanation:\n${query}` }],
+              }),
+            }).then(r => r.json())
+            const translated = res?.content?.[0]?.text?.trim()
+            if (translated && translated.length > 0) searchStr = translated
+          } catch {}
+        }
 
         // ── Step 2: Parallel search (no date filter — covers all time) ────
         send({ step: 2 })
@@ -167,28 +186,28 @@ export async function GET(request: NextRequest) {
         const [ytResponses, newsData, factCheckData, tiktokData, instaData] = await Promise.all([
           youtubeKey
             ? Promise.all([
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keywordStr + ' footage')}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keywordStr + ' video')}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
-                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keywordStr)}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr + ' footage')}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr + ' video')}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchStr)}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
                 fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query.trim())}&type=video&order=relevance&maxResults=10&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
               ])
             : Promise.resolve([{ items: [] }]),
 
           newsKey
-            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(keywordStr)}&sortBy=relevancy&pageSize=20&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
+            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchStr)}&sortBy=relevancy&pageSize=20&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
             : Promise.resolve({ articles: [] }),
 
           // Dedicated fact-check search — looks for debunking on known fact-check domains
           newsKey
-            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(keywordStr + ' fact check debunked hoax false')}&sortBy=relevancy&pageSize=10&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
+            ? fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(searchStr + ' fact check debunked hoax false')}&sortBy=relevancy&pageSize=10&apiKey=${newsKey}`).then(r => r.json()).catch(() => ({ articles: [] }))
             : Promise.resolve({ articles: [] }),
 
           bingKey
-            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(keywordStr + ' site:tiktok.com')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchStr + ' site:tiktok.com')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
             : Promise.resolve(null),
 
           bingKey
-            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(keywordStr + ' site:instagram.com/reel')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
+            ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchStr + ' site:instagram.com/reel')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
             : Promise.resolve(null),
         ])
 

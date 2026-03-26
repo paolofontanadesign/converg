@@ -1316,10 +1316,15 @@ export default function Home() {
     : 'none'
 
   const [mounted, setMounted] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const [recentQueries, setRecentQueries] = useState<string[]>([])
   useEffect(() => {
     setMounted(true)
+    const checkMobile = () => setIsMobile(window.innerWidth < 640)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
     fetch('/api/recent-queries').then(r => r.json()).then(d => setRecentQueries(d.queries ?? [])).catch(() => {})
+    return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
   const charCount = query.replace(/\s/g, '').length
@@ -1409,7 +1414,7 @@ export default function Home() {
     <main style={{ background: '#f7f4ef', minHeight: '100vh' }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header style={{ borderBottom: '1px solid #0f0f0e', padding: '18px 40px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <header style={{ borderBottom: '1px solid #0f0f0e', padding: isMobile ? '16px 20px' : '18px 40px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '26px', fontWeight: 700, color: '#0f0f0e' }}>
           Converg<span style={{ color: '#c8472a' }}>.</span>
         </span>
@@ -1419,8 +1424,8 @@ export default function Home() {
       </header>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-      <div style={{ flex: 1, maxWidth: '760px', padding: '64px 40px 0' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div style={{ flex: 1, maxWidth: isMobile ? '100%' : '760px', padding: isMobile ? '40px 20px 0' : '64px 40px 0' }}>
         <p style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', marginBottom: '20px' }}>Converg is pure heuristics — source authority, emotional tone, and coverage rarity, cross-referenced.</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
@@ -1436,7 +1441,7 @@ export default function Home() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
             disabled={loading}
-            style={{ flex: 1, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
+            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '13px', color: '#0f0f0e', background: 'transparent' }}
           />
           {mounted && charsNeeded > 0 && (
             <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
@@ -1485,7 +1490,7 @@ export default function Home() {
 
       {/* ── Recent queries (right column) ───────────────────────────────────── */}
       {mounted && recentQueries.length > 0 && (
-        <div style={{ width: '260px', flexShrink: 0, borderLeft: '1px solid #edeae3', padding: '64px 32px 0 32px' }}>
+        <div style={{ width: isMobile ? '100%' : '260px', flexShrink: 0, borderLeft: isMobile ? 'none' : '1px solid #edeae3', borderTop: isMobile ? '1px solid #edeae3' : 'none', padding: isMobile ? '24px 20px 0' : '64px 32px 0 32px' }}>
           <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', marginBottom: '20px' }}>Recently searched</p>
           {recentQueries.map((q, i) => (
             <button key={i} onClick={() => setQuery(q)}
@@ -1558,9 +1563,9 @@ export default function Home() {
       )}
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <div style={{ background: '#0f0f0e', padding: '40px' }}>
+      <div style={{ background: '#0f0f0e', padding: isMobile ? '32px 20px' : '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.35, flex: '1 1 0', minWidth: 0 }}>
+          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '16px' : '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.35, flex: '1 1 0', minWidth: 0 }}>
             Converg is pure heuristics — source authority, emotional tone,<br />and coverage rarity, cross-referenced.
           </span>
           <a href="https://instagram.com/paolofontanadesign" target="_blank" rel="noopener noreferrer"
