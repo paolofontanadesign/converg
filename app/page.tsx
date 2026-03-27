@@ -1787,6 +1787,9 @@ export default function Home() {
               <C span={hasUploadClock ? 6 : 12}><DiversityRadar results={results} aiScores={aiScores} /></C>
               {hasUploadClock && <C span={6}><UploadClock results={results} /></C>}
 
+              {/* Row 2b: reach × timing below upload clock */}
+              {hasViews && <C span={hasUploadClock ? 6 : 12} style={{ gridColumnStart: hasUploadClock ? 7 : undefined }}><ReachBubbles results={results} /></C>}
+
               {/* Row 3: swim lanes + title independence */}
               <C span={8}><SwimLanes results={results} /></C>
               <C span={4}>{hasOverlap ? <OverlapMatrix results={results} /> : <VelocityHistogram results={results} />}</C>
@@ -1800,9 +1803,8 @@ export default function Home() {
                 <WhoReportedIt results={results} debunked={debunked} suspicious={corroborationColor === 'suspicious'} />
               </C>
 
-              {/* Row 6 conditional: reach × timing + visual similarity */}
-              {hasViews && <C span={hasVisualScores ? 6 : 12}><ReachBubbles results={results} /></C>}
-              {hasVisualScores && <C span={hasViews ? 6 : 12}><VisualMatchChart results={results} /></C>}
+              {/* Row 6 conditional: visual similarity only */}
+              {hasVisualScores && <C span={12}><VisualMatchChart results={results} /></C>}
 
               {/* Row 6: platform spread + source contribution */}
               {hasPlatforms && <C span={6}><PlatformBreakdown results={results} /></C>}
