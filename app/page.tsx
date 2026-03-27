@@ -1479,16 +1479,18 @@ export default function Home() {
 
   // Use server-computed ratio (based on filtered final results, not local raw list)
   const unverifiedRatio = serverUnverifiedRatio
+  // Always use the same score shown to the user (server applies credibilityGate, local does not)
+  const displayScore = serverCorroborationScore ?? corroborationScore
   const corroborationLabel = (() => {
     if (results.length === 0) return '✕  No sources found'
     if (debunked) return '✕  Debunked — false claim'
-    if (corroborationScore >= 8) return hasStrongVisual ? '✓  Fully corroborated' : '✓  Strongly corroborated'
-    if (corroborationScore >= 6 && agencyCount > 0) return hasStrongVisual ? '✓  Confirmed by major agencies' : '✓  Reported by major agencies'
-    if (corroborationScore >= 6) return '✓  Strongly corroborated'
-    if (corroborationScore >= 3 && agencyCount > 0) return '△  Reported — verify independently'
-    if (corroborationScore >= 3 && aiScores.credibility >= 6) return '△  Partially corroborated'
+    if (displayScore >= 8) return hasStrongVisual ? '✓  Fully corroborated' : '✓  Strongly corroborated'
+    if (displayScore >= 6 && agencyCount > 0) return hasStrongVisual ? '✓  Confirmed by major agencies' : '✓  Reported by major agencies'
+    if (displayScore >= 6) return '✓  Strongly corroborated'
+    if (displayScore >= 3 && agencyCount > 0) return '△  Reported — verify independently'
+    if (displayScore >= 3 && aiScores.credibility >= 6) return '△  Partially corroborated'
     if (aiScores.outrage >= 7 && unverifiedRatio > 0.5) return '⚠  High outrage — suspicious'
-    if (corroborationScore >= 1.5) return '?  Weak signal — few sources'
+    if (displayScore >= 1.5) return '?  Weak signal — few sources'
     return '?  Unverified — no signal'
   })()
   const corroborationColor = debunked ? 'debunked'
