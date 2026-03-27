@@ -1787,8 +1787,8 @@ export default function Home() {
               <C span={hasUploadClock ? 6 : 12}><DiversityRadar results={results} aiScores={aiScores} /></C>
               {hasUploadClock && <C span={6}><UploadClock results={results} /></C>}
 
-              {/* Row 2b: reach × timing below upload clock */}
-              {hasViews && <C span={hasUploadClock ? 6 : 12} style={{ gridColumnStart: hasUploadClock ? 7 : undefined }}><ReachBubbles results={results} /></C>}
+              {/* Row 2b: reach × timing — same column as upload clock */}
+              {hasViews && <C span={hasUploadClock ? 6 : 12} style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
 
               {/* Row 3: swim lanes + title independence */}
               <C span={8}><SwimLanes results={results} /></C>
