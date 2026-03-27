@@ -1481,7 +1481,9 @@ export default function Home() {
   const corroborationLabel = (() => {
     if (results.length === 0) return '✕  No sources found'
     if (debunked) return '✕  Debunked — false claim'
+    if (corroborationScore >= 8) return hasStrongVisual ? '✓  Fully corroborated' : '✓  Strongly corroborated'
     if (corroborationScore >= 6 && agencyCount > 0) return hasStrongVisual ? '✓  Confirmed by major agencies' : '✓  Reported by major agencies'
+    if (corroborationScore >= 6) return '✓  Strongly corroborated'
     if (corroborationScore >= 3 && agencyCount > 0) return '△  Reported — verify independently'
     if (corroborationScore >= 3 && aiScores.credibility >= 6) return '△  Partially corroborated'
     if (aiScores.outrage >= 7 && unverifiedRatio > 0.5) return '⚠  High outrage — suspicious'
@@ -1787,8 +1789,9 @@ export default function Home() {
               <C span={hasUploadClock ? 6 : 12}><DiversityRadar results={results} aiScores={aiScores} /></C>
               {hasUploadClock && <C span={6}><UploadClock results={results} /></C>}
 
-              {/* Row 2b: reach × timing — same column as upload clock */}
-              {hasViews && <C span={hasUploadClock ? 6 : 12} style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
+              {/* Row 2b: language coverage (left) + reach × timing (right, same col as clock) */}
+              {hasViews && <C span={6}><LanguageCoverage results={results} /></C>}
+              {hasViews && <C span={6} style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
 
               {/* Row 3: swim lanes + title independence */}
               <C span={8}><SwimLanes results={results} /></C>
@@ -1810,9 +1813,8 @@ export default function Home() {
               {hasPlatforms && <C span={6}><PlatformBreakdown results={results} /></C>}
               <C span={hasPlatforms ? 6 : 12}><SourceContribution results={results} /></C>
 
-              {/* Row 7: score waterfall + language coverage */}
-              <C span={6}><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
-              <C span={6}><LanguageCoverage results={results} /></C>
+              {/* Row 7: score waterfall — full width */}
+              <C span={12}><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
 
               {/* Row 8: red flags + credibility profile */}
               <C span={6}><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
