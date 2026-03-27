@@ -265,6 +265,21 @@ export async function GET(request: NextRequest) {
         // ── Step 3: Classify + filter ─────────────────────────────────────
         send({ step: 3 })
 
+        // For raw-query results (original language), check relevance against the original query words
+        // (not the translated English keywords) so Italian/non-English titles are matched correctly.
+        // Split on whitespace AND apostrophes/hyphens so "Dubai's" → ["dubai", "s"] → ["dubai"].
+        const origQueryWords = [...new Set(
+          query.toLowerCase().split(/[\s'''\-]+/)
+            .map(w => w.replace(/[^a-zA-ZÀ-ÿ\u0400-\u04ff\u0600-\u06ff]/g, ''))
+            .filter(w => w.length > 3)
+        )]
+        const rawQueryRelevant = (title: string) => {
+          if (origQueryWords.length === 0) return true
+          const lower = title.toLowerCase()
+          const hits = origQueryWords.filter(w => lower.includes(w)).length
+          return hits >= Math.max(1, Math.ceil(origQueryWords.length * 0.3))
+        }
+
         // Relevance check using named entities (language-agnostic: proper nouns and numbers
         // appear in Latin script regardless of the query language).
         // Articles must match at least one named entity OR two regular keywords.
@@ -284,21 +299,24 @@ export async function GET(request: NextRequest) {
           const minHits = namedEntityKws.length === 0
             ? Math.max(2, Math.ceil(regularKws.length * 0.4))
             : (strict ? 2 : 1)
-          return regularHits >= minHits
-        }
-
-        // For raw-query results (original language), check relevance against the original query words
-        // (not the translated English keywords) so Italian/non-English titles are matched correctly.
-        const origQueryWords = [...new Set(
-          query.toLowerCase().split(/\s+/)
-            .map(w => w.replace(/[^a-zA-ZÀ-ÿ\u0400-\u04ff\u0600-\u06ff]/g, ''))
-            .filter(w => w.length > 3)
-        )]
-        const rawQueryRelevant = (title: string) => {
-          if (origQueryWords.length === 0) return true
-          const lower = title.toLowerCase()
-          const hits = origQueryWords.filter(w => lower.includes(w)).length
-          return hits >= Math.max(1, Math.ceil(origQueryWords.length * 0.3))
+          if (regularHits >= minHits) return true
+          // Fallback A: individual words (≥5 chars) extracted from multi-word entity phrases.
+          // Handles cases where AI returns specific phrases ("dubai international airport") but
+          // titles use shorter forms ("Dubai Airport"). Need 2 such words in strict mode, 1 otherwise.
+          const entityWords = [...new Set(
+            namedEntityKws.flatMap(kw => kw.split(/[\s\-]+/).filter(w => w.length >= 5))
+          )]
+          if (entityWords.length > 0) {
+            const ewHits = entityWords.filter(w => lower.includes(w)).length
+            if (ewHits >= (strict ? 2 : 1)) return true
+          }
+          // Fallback B: original query words — handles multilingual suggestions where AI entities
+          // are in English but the article title is in another language (e.g. Italian suggestion).
+          if (origQueryWords.length >= 2) {
+            const origHits = origQueryWords.filter(w => w.length >= 5 && lower.includes(w)).length
+            if (origHits >= Math.max(1, Math.ceil(origQueryWords.length * 0.25))) return true
+          }
+          return false
         }
 
         const seenVideoIds = new Set<string>()

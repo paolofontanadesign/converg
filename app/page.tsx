@@ -1629,8 +1629,8 @@ export default function Home() {
   const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
 
   // Card wrapper for dashboard grid cells
-  const C = ({ children, span = 6, bg = '#f7f4ef' }: { children: React.ReactNode; span?: number; bg?: string }) => (
-    <div style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 16px' : '32px 28px', minWidth: 0, overflow: 'hidden' }}>{children}</div>
+  const C = ({ children, span = 6, bg = '#f7f4ef', style }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties }) => (
+    <div style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 16px' : '32px 28px', minWidth: 0, overflow: 'hidden', ...style }}>{children}</div>
   )
 
   return (
@@ -1649,12 +1649,12 @@ export default function Home() {
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
       <div style={{ flex: 1, maxWidth: isMobile ? '100%' : '760px', padding: isMobile ? '40px 20px 0' : '64px 40px 0' }}>
-        <p style={{ fontFamily: MONO, fontSize: '11px', color: '#c8472a', marginBottom: '20px' }}>Don't trust one source.</p>
+        <p style={{ fontFamily: MONO, fontSize: '15px', color: '#c8472a', marginBottom: '20px' }}>Don't trust one source.</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
-          Describe a news event. Converg searches for corroboration across agencies, independent outlets and raw footage — then scores reliability based on source diversity, timing, language spread and outrage signals.
+          Start typing a few words — recent headlines will appear to choose from. Or describe the event in your own words. Converg cross-references agencies, independent outlets and raw footage to score reliability.
         </p>
         <div style={{ position: 'relative', marginBottom: '48px' }}>
           <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
