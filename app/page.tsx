@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 const steps = [
   { key: 'metadata', label: 'Metadata extraction', detail: 'Title · timestamp · location signals' },
@@ -892,7 +892,7 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
     <div style={{}}>
       <ChartHeader title="Corroboration profile" sub="Six-dimensional view of corroboration quality. Fuller polygon = stronger, more diverse, less emotionally loaded signal." />
       <div style={{ display: 'flex', gap: '40px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: '220px', height: '220px', flexShrink: 0 }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
           {[0.25, 0.5, 0.75, 1].map(level => (
             <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 1 : 0.5} />
           ))}
@@ -1252,7 +1252,7 @@ function UploadClock({ results }: { results: any[] }) {
     <div style={{}}>
       <ChartHeader title="Upload clock" sub="Hour of day (UTC) when each source was uploaded. Clustered bars may indicate scheduled or coordinated activity." />
       <div style={{ display: 'flex', gap: '48px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: '220px', height: '220px', flexShrink: 0 }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
           {/* Inner circle */}
           <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="1" />
           {/* Outer ring guide */}
@@ -1432,6 +1432,7 @@ export default function Home() {
   const [showSugg, setShowSugg] = useState(false)
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const chartsRef = useRef<HTMLDivElement>(null)
   const [searched, setSearched] = useState(false)
   const [currentStep, setCurrentStep] = useState(-1)
   const [checkedQuery, setCheckedQuery] = useState<string>('')
@@ -1538,6 +1539,46 @@ export default function Home() {
 
   const charCount = query.replace(/\s/g, '').length
   const charsNeeded = Math.max(0, 30 - charCount)
+
+  function downloadChartsSVG() {
+    const container = chartsRef.current
+    if (!container) return
+    const svgs = Array.from(container.querySelectorAll('svg'))
+    if (svgs.length === 0) return
+
+    const WIDTH = 800
+    const GAP = 20
+    let offsetY = 0
+    const groups: string[] = []
+
+    svgs.forEach(svg => {
+      const vb = svg.getAttribute('viewBox')
+      if (!vb) return
+      const parts = vb.trim().split(/[\s,]+/).map(Number)
+      if (parts.length < 4) return
+      const [, , vw, vh] = parts
+      if (!vw || !vh) return
+      const scaledH = (vh / vw) * WIDTH
+      groups.push(
+        `<svg x="0" y="${offsetY.toFixed(1)}" width="${WIDTH}" height="${scaledH.toFixed(1)}" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg">${svg.innerHTML}</svg>`
+      )
+      offsetY += scaledH + GAP
+    })
+
+    if (groups.length === 0) return
+    const totalH = offsetY - GAP
+    const slug = checkedQuery.slice(0, 40).replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    const svgStr = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${WIDTH}" height="${totalH.toFixed(1)}" viewBox="0 0 ${WIDTH} ${totalH.toFixed(1)}">\n  <rect width="${WIDTH}" height="${totalH.toFixed(1)}" fill="#f7f4ef"/>\n  ${groups.join('\n  ')}\n</svg>`
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `converg-${slug || 'charts'}.svg`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   const analyze = async (overrideQuery?: string) => {
     const q = (overrideQuery ?? query).trim()
@@ -1656,7 +1697,7 @@ export default function Home() {
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
-          Start typing a few words — recent headlines will appear to choose from. Or describe the event in your own words. Converg cross-references agencies, independent outlets and raw footage to score reliability.
+          Type a few words in any language — recent headlines will appear. Pick one or describe freely. Converg scores reliability using source diversity, timing and outrage signals.
         </p>
         <div style={{ position: 'relative', marginBottom: '48px' }}>
           <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
@@ -1779,7 +1820,7 @@ export default function Home() {
           />
 
           {results.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
+            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
 
               {/* Row 1: score buildup + score anatomy */}
               <C span={8}><CorroborationBuildup results={results} /></C>
@@ -1833,11 +1874,26 @@ export default function Home() {
         </div>
       )}
 
+      {/* ── Download charts ────────────────────────────────────────────────── */}
+      {searched && !loading && results.length > 0 && (
+        <div style={{ padding: isMobile ? '20px 20px' : '20px 0 0', display: 'flex', justifyContent: isMobile ? 'stretch' : 'flex-end', paddingRight: isMobile ? undefined : '0' }}>
+          <button
+            onClick={downloadChartsSVG}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: '1px solid #0f0f0e', padding: '10px 20px', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: '#0f0f0e', cursor: 'pointer', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="#0f0f0e" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            DOWNLOAD CHARTS AS SVG
+          </button>
+        </div>
+      )}
+
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div style={{ background: '#0f0f0e', padding: isMobile ? '32px 20px' : '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '16px' : '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.35, flex: '1 1 0', minWidth: 0 }}>
-            <em>Converg is pure heuristics — source authority, emotional tone,<br />and coverage rarity, cross-referenced.</em>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'flex-end', gap: isMobile ? '16px' : '24px' }}>
+          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '16px' : '22px', fontWeight: 400, color: '#f7f4ef', lineHeight: 1.45 }}>
+            <em>Converg is pure heuristics — source authority, emotional tone and coverage rarity, cross-referenced.</em>
           </span>
           <a href="https://instagram.com/paolofontanadesign" target="_blank" rel="noopener noreferrer"
              style={{ fontFamily: MONO, fontSize: '11px', color: '#f7f4ef', textDecoration: 'none', letterSpacing: '0.06em', borderBottom: '1px solid #3a3a38', paddingBottom: '1px', whiteSpace: 'nowrap', flexShrink: 0 }}>
