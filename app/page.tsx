@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { zipSync, strToU8 } from 'fflate'
 
 const steps = [
   { key: 'metadata', label: 'Metadata extraction', detail: 'Title · timestamp · location signals' },
@@ -1694,7 +1695,7 @@ export default function Home() {
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
       <div style={{ flex: 1, maxWidth: isMobile ? '100%' : '760px', padding: isMobile ? '40px 20px 0' : '64px 40px 0' }}>
-        <p style={{ fontFamily: MONO, fontSize: '15px', color: '#c8472a', marginBottom: '20px' }}>Don't trust one source.</p>
+        <p style={{ fontFamily: MONO, fontSize: '15px', color: '#c8472a', marginBottom: '20px' }}>OSINT intelligence, simplified for the curious.</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
         </h1>
