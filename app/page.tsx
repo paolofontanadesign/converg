@@ -1310,8 +1310,8 @@ function UploadClock({ results }: { results: any[] }) {
 
 // ── Visual Verdict Hero ───────────────────────────────────────────────────────
 
-function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile, outrageMultiplier }: {
-  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean; outrageMultiplier: number
+function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile, outrageMultiplier, aiAnalysisAvailable }: {
+  checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean; outrageMultiplier: number; aiAnalysisAvailable: boolean
 }) {
   const scoreGradientColor = (() => {
     const t = Math.min(Math.max(corroborationScore / 10, 0), 1)
@@ -1773,6 +1773,7 @@ export default function Home() {
             factCheckArticles={factCheckArticles}
             isMobile={isMobile}
             outrageMultiplier={outrageMultiplier}
+            aiAnalysisAvailable={aiAnalysisAvailable}
           />
 
           {results.length > 0 ? (
