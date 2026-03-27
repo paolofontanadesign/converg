@@ -8,7 +8,7 @@ const SOURCE_WEIGHTS: Record<string, number> = {
   major: 2,        // BBC, NYT, Guardian
   independent: 1,  // smaller known outlets
   unverified: 0.5, // unknown blogs / no source id
-  raw: 3,          // raw footage from unknown channel
+  raw: 1.5,        // raw footage: valuable but unedited, unverified channel
   secondary: 1.5,  // news channel, non-editorial
   aggregated: 0.5, // editorial/compilation video
 }
@@ -40,11 +40,24 @@ function detectLanguage(text: string): string {
 
 // ── Video source classification ────────────────────────────────────────────
 const majorOutlets = [
-  'bbc','cnn','sky news','abc news','cbs news','nbc news','reuters','ap ','associated press',
+  'bbc','cnn','sky news','abc news','cbs news','nbc news','reuters','associated press',
   'france 24','dw news','al jazeera','nyt','new york times','washington post','guardian',
   'bloomberg','euronews','fox news','msnbc','the times','le monde','der spiegel','corriere',
 ]
-const editorialRe = /reaction|compilation|explained|analysis|breakdown|fact.?check|debunked|fake or real|real or fake|opinion|documentary|what happened|why did|how did|the truth|full story|in depth/i
+const editorialRe = new RegExp([
+  // English
+  'reaction','compilation','explained','analysis','breakdown','fact.?check','debunked',
+  'fake or real','real or fake','opinion','documentary','what happened','why did','how did',
+  'the truth','full story','in depth',
+  // Italian
+  'analisi','spiegazione','documentario','opinione','bufala','bufale','commento','verifica',
+  // French
+  'analyse','explication','documentaire','vérification','opinion',
+  // Spanish
+  'análisis','explicación','documental','verificación','opinión',
+  // German
+  'analyse','erklärung','dokumentation','meinung','überprüfung',
+].join('|'), 'i')
 
 function isEditorial(title: string): boolean { return editorialRe.test(title) }
 
@@ -73,7 +86,7 @@ const MAJOR_IDS = new Set([
   'the-times-of-india','abc-news','nbc-news','cbs-news','fox-news','msnbc','the-telegraph',
   'the-independent','euronews','france-24','deutsche-welle','rt','xinhua',
 ])
-const AGENCY_DOMAINS = ['reuters.com','apnews.com','afp.com','bloomberg.com']
+const AGENCY_DOMAINS = ['reuters.com','apnews.com','afp.com','bloomberg.com','ap.org']
 const FACTCHECK_DOMAINS = [
   'snopes.com','politifact.com','factcheck.org','fullfact.org','leadstories.com',
   'checkyourfact.com','poynter.org','verafiles.org','reuters.com/fact-check',
@@ -85,12 +98,16 @@ const MAJOR_DOMAINS  = [
   'telegraph.co.uk','france24.com','dw.com','euronews.com',
 ]
 
+function extractHostname(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase() } catch { return '' }
+}
+
 function classifyArticleSource(article: any): 'agency' | 'major' | 'independent' | 'unverified' {
-  const id  = (article.source?.id  ?? '').toLowerCase()
-  const url = (article.url         ?? '').toLowerCase()
-  if (AGENCY_IDS.has(id) || AGENCY_DOMAINS.some(d => url.includes(d))) return 'agency'
-  if (MAJOR_IDS.has(id)  || MAJOR_DOMAINS.some(d => url.includes(d)))  return 'major'
-  if (id.length > 0) return 'independent'
+  const id       = (article.source?.id ?? '').toLowerCase()
+  const hostname = extractHostname(article.url ?? '')
+  if (AGENCY_IDS.has(id) || AGENCY_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))) return 'agency'
+  if (MAJOR_IDS.has(id)  || MAJOR_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d)))  return 'major'
+  if (id.length > 0 || hostname.length > 0) return 'independent'
   return 'unverified'
 }
 
@@ -140,10 +157,10 @@ export async function GET(request: NextRequest) {
       try {
         if (!query) { send({ error: 'Please describe the news event to verify' }); return }
 
-        const youtubeKey  = process.env.YOUTUBE_API_KEY
-        const newsKey     = process.env.NEWSAPI_KEY
+        const youtubeKey   = process.env.YOUTUBE_API_KEY
+        const newsKey      = process.env.NEWSAPI_KEY
         const anthropicKey = process.env.ANTHROPIC_API_KEY
-        const bingKey     = process.env.BING_API_KEY
+        const bingKey      = process.env.BING_API_KEY
 
         // ── Step 0: Fallback keyword extraction (used if AI interpretation fails) ──
         send({ step: 0 })
@@ -207,7 +224,7 @@ export async function GET(request: NextRequest) {
         // ── Step 2: Parallel search (no date filter — covers all time) ────
         send({ step: 2 })
 
-        const [ytResponses, newsData, factCheckData, tiktokData, instaData] = await Promise.all([
+        const [ytResponses, newsData, factCheckData, tiktokData, instaData, gdeltData, guardianData] = await Promise.all([
           youtubeKey
             ? Promise.all([
                 fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQueries[0])}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
@@ -233,6 +250,12 @@ export async function GET(request: NextRequest) {
           bingKey
             ? fetch(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchQueries[1] + ' site:instagram.com/reel')}&count=10&mkt=en-US`, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }).then(r => r.json()).catch(() => null)
             : Promise.resolve(null),
+
+          // GDELT — no key needed, global news database
+          fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(searchQueries[1])}&mode=artlist&maxrecords=25&format=json&timespan=3months&sort=DateDesc`)
+            .then(r => r.json()).catch(() => ({ articles: [] })),
+
+          Promise.resolve(null),
         ])
 
         if (ytResponses.some((d: any) => d.error?.code === 403)) {
@@ -346,6 +369,36 @@ export async function GET(request: NextRequest) {
             }
           })
 
+        // GDELT articles — parse seendate format YYYYMMDDHHMMSS
+        const gdeltItems: any[] = ((gdeltData as any)?.articles ?? [])
+          .filter((a: any) => a.title && a.url)
+          .filter((a: any) => relevantEnough(a.title, true))
+          .map((a: any, i: number) => {
+            const title = (a.title ?? '').replace(/&#39;/g,"'").replace(/&amp;/g,'&').replace(/&quot;/g,'"')
+            const sd = (a.seendate ?? '') as string
+            const publishedAt = sd.length >= 8
+              ? `${sd.slice(0,4)}-${sd.slice(4,6)}-${sd.slice(6,8)}T${sd.length >= 10 ? sd.slice(8,10) : '00'}:${sd.length >= 12 ? sd.slice(10,12) : '00'}:${sd.length >= 14 ? sd.slice(12,14) : '00'}Z`
+              : new Date().toISOString()
+            const domain = (a.domain ?? '').toLowerCase()
+            const articleUrl = a.url ?? `https://${domain}/`
+            return {
+              id: `gdelt-${i}-${Date.now()}`,
+              type: 'article',
+              title,
+              channel: domain || 'Unknown',
+              description: '',
+              publishedAt,
+              language: (a.language ?? 'en').toLowerCase().slice(0, 2),
+              sourceType: classifyArticleSource({ source: { id: '' }, url: articleUrl }),
+              platform: 'gdelt',
+              url: articleUrl,
+              viewCount: 0,
+              visualScore: null,
+            }
+          })
+
+        const guardianItems: any[] = []
+
         // Bing social
         const parseBingItems = (data: any, platform: 'tiktok' | 'instagram') => {
           if (!data?.webPages?.value) return []
@@ -379,7 +432,7 @@ export async function GET(request: NextRequest) {
           ...parseBingItems(instaData, 'instagram'),
         ]
 
-        const allResults = [...videoItems, ...articleItems, ...socialResults]
+        const allResults = [...videoItems, ...articleItems, ...gdeltItems, ...guardianItems, ...socialResults]
 
         if (allResults.length === 0) {
           send({ result: { query, scores: { corroboration: 0, outrage: 5, simplicity: 5, credibility: 5, debunked: false, agencyCount: 0, factCheckCount: 0 }, results: [], narrative: '', factCheckArticles: [] } })
@@ -417,9 +470,10 @@ export async function GET(request: NextRequest) {
         // ── Step 4: AI analysis ───────────────────────────────────────────
         let narrative = ''
         const visualScores: Record<string, number> = {}
-        let outrageScore    = 5
-        let simplicityScore = 5
+        let outrageScore     = 5
+        let simplicityScore  = 5
         let credibilityScore = 5
+        let aiAnalysisAvailable = false
 
         if (anthropicKey && resultsWithTiming.length > 0) {
           send({ step: 4 })
@@ -444,7 +498,7 @@ export async function GET(request: NextRequest) {
 
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
 simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
-credibilityScore: overall credibility of the claim based on who covers it and how (0=almost certainly false, 5=unverified, 10=confirmed by credible sources)
+credibilityScore: factual accuracy of the CLAIM ITSELF (0=core fact is false or fabricated — event never happened, person never said that; 2=real event but claim heavily misrepresents it, e.g. puts false words in someone's mouth; 4=real event, misleading framing or unverified details; 6=real event, likely accurate, some credible sourcing; 8=factually confirmed by credible news sources; 10=confirmed by major agencies like AP/Reuters/AFP). IMPORTANT: dramatic or sensationalist headline language does NOT lower this score if the underlying event is real and verifiable. Only lower the score when the CORE FACT of the claim is false or fabricated.
 irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim — e.g. a UFO sighting video when the claim is about a nuclear reactor design, or a sports article when the claim is about a flood. Keep results that discuss the same claim in any language, any framing, or any angle (including debunks, news coverage, raw footage). Do NOT mark a result just because it is in a different language or uses different words for the same subject.
 
 Claim: "${query}"
@@ -463,6 +517,7 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
             outrageScore     = typeof parsed.outrageScore     === 'number' ? Math.max(0, Math.min(10, parsed.outrageScore))     : 5
             simplicityScore  = typeof parsed.simplicityScore  === 'number' ? Math.max(0, Math.min(10, parsed.simplicityScore))  : 5
             credibilityScore = typeof parsed.credibilityScore === 'number' ? Math.max(0, Math.min(10, parsed.credibilityScore)) : 5
+            if (narrative) aiAnalysisAvailable = true
             if (Array.isArray(parsed.irrelevantIndices)) {
               for (const idx of parsed.irrelevantIndices) {
                 if (typeof idx === 'number') irrelevantIndices.add(idx)
@@ -610,11 +665,22 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
           return total + unverifiedTotal
         })()
 
+        // Credibility gate: a story covered by many low-credibility sources
+        // (clickbait, speculation, entertainment) should not score high.
+        // credibilityScore (1–10) from AI scales the raw coverage score down.
+        // Linear credibility gate: maps credibilityScore 0–10 → multiplier 0.1–1.0
+        // credibility=0  → 0.10 (nearly zero — claim is false/fabricated)
+        // credibility=5  → 0.55 (unverified — half weight)
+        // credibility=10 → 1.00 (fully confirmed — no penalty)
+        const credibilityGate = 0.10 + (credibilityScore / 10) * 0.90
+
+        const finalCorroborationScore = Math.min(credibilityWeightedScore * credibilityGate, 10)
+
         send({
           result: {
             query,
             scores: {
-              corroboration: credibilityWeightedScore,
+              corroboration: finalCorroborationScore,
               outrage: outrageScore,
               simplicity: simplicityScore,
               credibility: credibilityScore,
@@ -622,6 +688,10 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
               agencyCount,
               factCheckCount: factCheckHits.length,
               outrageMultiplier,
+              aiAnalysisAvailable,
+              unverifiedRatio: finalResults.length > 0
+                ? finalResults.filter((r: any) => r.sourceType === 'unverified').length / finalResults.length
+                : 0,
             },
             results: finalResults,
             narrative,

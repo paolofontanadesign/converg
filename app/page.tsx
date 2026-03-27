@@ -19,7 +19,7 @@ const SOURCE_LABELS: Record<string, string> = {
   agency: 'News agency', major: 'Major outlet', independent: 'Independent', unverified: 'Unverified',
 }
 const SOURCE_WEIGHTS: Record<string, number> = {
-  raw: 3, secondary: 1.5, aggregated: 0.5,
+  raw: 1.5, secondary: 1.5, aggregated: 0.5,
   agency: 4, major: 2, independent: 1, unverified: 0.5,
 }
 const PLATFORM_LABELS: Record<string, string> = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram' }
@@ -522,6 +522,225 @@ function PlatformBreakdown({ results }: { results: any[] }) {
         </div>
       ))}
       <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart A: Source contribution breakdown ────────────────────────────────────
+
+const SOURCE_TYPE_ORDER = ['agency','major','independent','secondary','raw','aggregated','unverified']
+const SOURCE_TYPE_COLORS: Record<string,string> = {
+  agency:'#1a6b4a', major:'#2d5a8e', independent:'#6b5a2d', secondary:'#555452',
+  raw:'#8e4a2d', aggregated:'#888680', unverified:'#c8c8c4',
+}
+
+function SourceContribution({ results }: { results: any[] }) {
+  const groups = SOURCE_TYPE_ORDER.map(t => {
+    const items = results.filter(r => r.sourceType === t)
+    const pts = items.reduce((s, r) => s + (SOURCE_WEIGHTS[t] ?? 1), 0)
+    return { type: t, count: items.length, pts }
+  }).filter(g => g.count > 0)
+
+  if (groups.length === 0) return null
+  const maxPts = Math.max(...groups.map(g => g.pts), 0.1)
+
+  return (
+    <div>
+      <ChartHeader title="Source contribution" sub="Points contributed to raw score by source type before any penalties." />
+      {groups.map(g => (
+        <div key={g.type} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 52px', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>
+            {SOURCE_LABELS[g.type] ?? g.type}
+          </span>
+          <div style={{ height: '20px', background: '#f0ede6', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(g.pts / maxPts) * 100}%`, background: SOURCE_TYPE_COLORS[g.type] ?? '#888', transition: 'width 0.6s ease' }} />
+            <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: '9px', color: '#f7f4ef', mixBlendMode: 'difference' }}>
+              {g.count} source{g.count !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{g.pts.toFixed(1)}pts</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Chart B: Score waterfall ──────────────────────────────────────────────────
+
+function ScoreWaterfall({ results, aiScores, corroborationScore }: {
+  results: any[]; aiScores: { outrage: number; simplicity: number; credibility: number }; corroborationScore: number
+}) {
+  // Recompute raw (no outrage, no gate) and after-outrage scores client-side
+  const rawScore = Math.min(results.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0), 10)
+  const outrMult = aiScores.outrage >= 8 ? 0.1 : aiScores.outrage >= 6 ? 0.4 : aiScores.outrage >= 4 ? 0.75 : 1.0
+  const afterOutrage = Math.min(rawScore * outrMult, 10)
+  const credGate = 0.10 + (aiScores.credibility / 10) * 0.90
+  const afterGate = Math.min(afterOutrage * credGate, 10)
+  const final = Math.min(corroborationScore, 10)
+
+  const steps = [
+    { label: 'Raw coverage', value: rawScore, color: '#555452', desc: 'Sum of source weights' },
+    { label: 'After outrage', value: afterOutrage, color: aiScores.outrage >= 6 ? '#c8472a' : '#888680', desc: `Outrage ${aiScores.outrage}/10 → ×${outrMult.toFixed(2)}` },
+    { label: 'After credibility', value: afterGate, color: aiScores.credibility >= 6 ? '#1a6b4a' : '#c8472a', desc: `Credibility ${aiScores.credibility}/10 → ×${credGate.toFixed(2)}` },
+    { label: 'Final score', value: final, color: '#0f0f0e', desc: 'Capped at 10' },
+  ]
+  const max = Math.max(...steps.map(s => s.value), 0.1)
+
+  return (
+    <div>
+      <ChartHeader title="Score waterfall" sub="How the final score is constructed — each step shows penalties applied." />
+      {steps.map((s, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 48px', gap: '12px', alignItems: 'center', marginBottom: '14px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
+            <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginTop: '2px' }}>{s.desc}</div>
+          </div>
+          <div style={{ height: '22px', background: '#f0ede6', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(s.value / max) * 100}%`, background: s.color, transition: 'width 0.7s ease', opacity: i === steps.length - 1 ? 1 : 0.7 }} />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '12px', fontWeight: 700, color: s.color }}>{s.value.toFixed(1)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Chart C: Language coverage ────────────────────────────────────────────────
+
+const LANG_FLAGS: Record<string,string> = {
+  en:'🇬🇧', it:'🇮🇹', fr:'🇫🇷', de:'🇩🇪', es:'🇪🇸', pt:'🇧🇷',
+  ar:'🇸🇦', ru:'🇷🇺', zh:'🇨🇳', ja:'🇯🇵', ko:'🇰🇷', nl:'🇳🇱',
+  pl:'🇵🇱', tr:'🇹🇷', uk:'🇺🇦', undetected:'🌐',
+}
+const LANG_NAMES: Record<string,string> = {
+  en:'English', it:'Italian', fr:'French', de:'German', es:'Spanish', pt:'Portuguese',
+  ar:'Arabic', ru:'Russian', zh:'Chinese', ja:'Japanese', ko:'Korean', nl:'Dutch',
+  pl:'Polish', tr:'Turkish', uk:'Ukrainian', undetected:'Unknown',
+}
+
+function LanguageCoverage({ results }: { results: any[] }) {
+  const counts: Record<string,number> = {}
+  for (const r of results) {
+    const l = r.language ?? 'undetected'
+    counts[l] = (counts[l] ?? 0) + 1
+  }
+  const langs = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  if (langs.length === 0) return null
+  const max = langs[0][1]
+
+  return (
+    <div>
+      <ChartHeader title="Language coverage" sub="Stories independently verified in multiple languages carry stronger corroboration weight." />
+      {langs.map(([lang, count]) => (
+        <div key={lang} style={{ display: 'grid', gridTemplateColumns: '32px 90px 1fr 28px', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+          <span style={{ fontSize: '16px' }}>{LANG_FLAGS[lang] ?? '🌐'}</span>
+          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{LANG_NAMES[lang] ?? lang}</span>
+          <div style={{ height: '16px', background: '#f0ede6', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(count / max) * 100}%`, background: '#2d5a8e', transition: 'width 0.6s ease' }} />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', textAlign: 'right' }}>{count}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Chart D: Red flags ────────────────────────────────────────────────────────
+
+function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, corroborationScore }: {
+  results: any[]; aiScores: { outrage: number; simplicity: number; credibility: number };
+  unverifiedRatio: number; aiAnalysisAvailable: boolean; corroborationScore: number
+}) {
+  const flags: { icon: string; label: string; detail: string; severity: 'high'|'medium'|'low' }[] = []
+
+  if (aiScores.outrage >= 8) flags.push({ icon: '🔴', label: 'Extreme outrage signal', detail: `Outrage score ${aiScores.outrage}/10 — content is highly emotionally manipulative`, severity: 'high' })
+  else if (aiScores.outrage >= 6) flags.push({ icon: '🟠', label: 'Elevated outrage', detail: `Outrage score ${aiScores.outrage}/10 — emotional framing may distort the story`, severity: 'medium' })
+
+  if (aiScores.credibility <= 2) flags.push({ icon: '🔴', label: 'Claim likely false', detail: `Credibility ${aiScores.credibility}/10 — core facts appear fabricated or misrepresented`, severity: 'high' })
+  else if (aiScores.credibility <= 4) flags.push({ icon: '🟠', label: 'Low credibility', detail: `Credibility ${aiScores.credibility}/10 — claim is poorly supported or misleadingly framed`, severity: 'medium' })
+
+  if (unverifiedRatio > 0.7) flags.push({ icon: '🟠', label: 'Mostly unverified sources', detail: `${Math.round(unverifiedRatio * 100)}% of sources are from unknown/unverified channels`, severity: 'medium' })
+
+  const noAgency = !results.some(r => r.sourceType === 'agency')
+  if (noAgency && results.length > 0) flags.push({ icon: '🟡', label: 'No agency coverage', detail: 'No Reuters, AP, or AFP source found — not independently confirmed by wire services', severity: 'low' })
+
+  const langs = new Set(results.map(r => r.language ?? 'undetected').filter(l => l !== 'undetected'))
+  if (langs.size === 1 && results.length >= 4) flags.push({ icon: '🟡', label: 'Single language only', detail: 'All sources in one language — no cross-border corroboration detected', severity: 'low' })
+
+  if (!aiAnalysisAvailable) flags.push({ icon: '🟡', label: 'AI analysis unavailable', detail: 'Scores are estimated defaults — Claude analysis did not complete', severity: 'low' })
+
+  if (aiScores.simplicity <= 3) flags.push({ icon: '🟠', label: 'Contradictory narratives', detail: `Consistency score ${aiScores.simplicity}/10 — sources tell conflicting stories`, severity: 'medium' })
+
+  if (flags.length === 0) {
+    return (
+      <div>
+        <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '16px', background: 'rgba(26,107,74,0.08)', border: '1px solid #1a6b4a' }}>
+          <span style={{ fontSize: '18px' }}>✓</span>
+          <span style={{ fontFamily: SANS, fontSize: '13px', color: '#1a6b4a' }}>No suspicious signals detected</span>
+        </div>
+      </div>
+    )
+  }
+
+  const severityOrder = { high: 0, medium: 1, low: 2 }
+  flags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
+
+  return (
+    <div>
+      <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
+      {flags.map((f, i) => (
+        <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '10px 12px', marginBottom: '8px', background: f.severity === 'high' ? 'rgba(200,71,42,0.08)' : f.severity === 'medium' ? 'rgba(200,130,42,0.08)' : 'rgba(0,0,0,0.03)', border: `1px solid ${f.severity === 'high' ? '#c8472a' : f.severity === 'medium' ? '#c8822a' : '#d4d0c8'}` }}>
+          <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>{f.icon}</span>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: '11px', fontWeight: '600', color: '#0f0f0e', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</div>
+            <div style={{ fontFamily: SANS, fontSize: '12px', color: '#555452', lineHeight: 1.4 }}>{f.detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Chart E: Credibility profile ──────────────────────────────────────────────
+
+function CredibilityProfile({ aiScores }: { aiScores: { outrage: number; simplicity: number; credibility: number } }) {
+  const dims = [
+    {
+      key: 'credibility', label: 'Factual accuracy', value: aiScores.credibility,
+      desc: (v: number) => v >= 8 ? 'Confirmed by credible sources' : v >= 6 ? 'Likely accurate' : v >= 4 ? 'Partially true / misleading' : 'Likely false or fabricated',
+      color: (v: number) => v >= 7 ? '#1a6b4a' : v >= 4 ? '#888680' : '#c8472a',
+      invert: false,
+    },
+    {
+      key: 'outrage', label: 'Emotional manipulation', value: aiScores.outrage,
+      desc: (v: number) => v >= 8 ? 'Extreme outrage-bait' : v >= 6 ? 'Elevated emotional framing' : v >= 4 ? 'Moderate tone' : 'Neutral / factual',
+      color: (v: number) => v >= 7 ? '#c8472a' : v >= 4 ? '#c8822a' : '#1a6b4a',
+      invert: true, // high = bad
+    },
+    {
+      key: 'simplicity', label: 'Narrative consistency', value: aiScores.simplicity,
+      desc: (v: number) => v >= 8 ? 'All sources agree' : v >= 5 ? 'Mostly consistent' : v >= 3 ? 'Conflicting accounts' : 'Highly contradictory',
+      color: (v: number) => v >= 7 ? '#1a6b4a' : v >= 4 ? '#888680' : '#c8472a',
+      invert: false,
+    },
+  ]
+
+  return (
+    <div>
+      <ChartHeader title="Credibility profile" sub="AI-assessed dimensions of the claim's reliability." />
+      {dims.map(d => (
+        <div key={d.key} style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{d.label}</span>
+            <span style={{ fontFamily: MONO, fontSize: '18px', fontWeight: 700, color: d.color(d.value) }}>{d.value}<span style={{ fontSize: '10px', fontWeight: 400, color: '#888680' }}>/10</span></span>
+          </div>
+          <div style={{ height: '8px', background: '#f0ede6', marginBottom: '5px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${d.value * 10}%`, background: d.color(d.value), transition: 'width 0.7s ease' }} />
+          </div>
+          <span style={{ fontFamily: SANS, fontSize: '11px', color: '#888680' }}>{d.desc(d.value)}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1094,11 +1313,14 @@ function UploadClock({ results }: { results: any[] }) {
 function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScore, corroborationLabel, hasStrongVisual, hasAnyVisual, aiScores, debunked, agencyCount, factCheckArticles, isMobile, outrageMultiplier }: {
   checkedQuery: string; results: any[]; narrative: string; corroborationScore: number; corroborationLabel: string; hasStrongVisual: boolean; hasAnyVisual: boolean; aiScores: { outrage: number; simplicity: number; credibility: number }; debunked: boolean; agencyCount: number; factCheckArticles: { title: string; url: string; source: string }[]; isMobile: boolean; outrageMultiplier: number
 }) {
-  const scoreColor = debunked ? '#c8472a'
-    : agencyCount > 0 && aiScores.outrage < 6 ? '#1a6b4a'
-    : agencyCount > 0 ? '#888680'
-    : aiScores.outrage >= 7 ? '#c8472a'
-    : '#555452'
+  const scoreGradientColor = (() => {
+    const t = Math.min(Math.max(corroborationScore / 10, 0), 1)
+    const hue = Math.round(8 + t * 137) // 8° (red) → 145° (green)
+    const sat = Math.round(63 + t * 7)  // 63% → 70%
+    const light = Math.round(48 + t * 2) // 48% → 50%
+    return `hsl(${hue}, ${sat}%, ${light}%)`
+  })()
+  const scoreColor = debunked ? '#c8472a' : scoreGradientColor
   const badgeBg = debunked ? '#c8472a'
     : agencyCount > 0 && aiScores.outrage < 6 ? '#1a6b4a'
     : agencyCount > 0 ? 'transparent'
@@ -1111,174 +1333,91 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
     : aiScores.outrage >= 7 ? '#c8472a'
     : '#3a3a38'
 
-  // Top visual witnesses — YouTube only, sorted by score desc then earliest first
-  const witnesses = [...results]
-    .filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
-    .sort((a, b) => b.visualScore - a.visualScore || a.hoursAfterSource - b.hoursAfterSource)
-    .slice(0, 5)
-
-  const scoreCol = (s: number) => s >= 7 ? '#1a6b4a' : s >= 4 ? '#c8c8c4' : '#555452'
-  const formatH = (h: number) => `${h > 0 ? '+' : ''}${h}h`
-
   return (
     <div style={{ background: '#0f0f0e' }}>
 
-      {/* Main visual row */}
-      <div style={{ padding: isMobile ? '24px 20px 0' : '40px 40px 0', display: 'flex', gap: '32px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      {/* Score + AI assessment + verdict */}
+      <div style={{ padding: isMobile ? '32px 20px 48px' : '48px 40px 56px', display: 'flex', gap: '48px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-        {/* Query text block — replaces source video */}
-        <div style={{ flex: '0 0 220px' }}>
-          <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#c8472a', letterSpacing: '0.12em', marginBottom: '10px', fontWeight: '600' }}>Verified claim</p>
-          <div style={{ border: '2px solid #c8472a', padding: '20px', marginBottom: '12px', minHeight: '100px', display: 'flex', alignItems: 'center' }}>
-            <p style={{ fontFamily: "'Playfair Display', serif", fontSize: '15px', fontStyle: 'italic', color: '#f7f4ef', lineHeight: 1.5 }}>
-              "{checkedQuery}"
-            </p>
-          </div>
-          {/* Score pills */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <div style={{ padding: '4px 10px', border: `1px solid ${(aiScores.outrage ?? 5) >= 7 ? '#c8472a' : '#3a3a38'}`, display: 'flex', gap: '6px', alignItems: 'baseline' }}>
-              <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Outrage</span>
-              <span style={{ fontFamily: MONO, fontSize: '13px', fontWeight: 700, color: (aiScores.outrage ?? 5) >= 7 ? '#c8472a' : (aiScores.outrage ?? 5) >= 4 ? '#888680' : '#555452' }}>{aiScores.outrage ?? '—'}</span>
-              <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>/10</span>
-            </div>
-            <div style={{ padding: '4px 10px', border: `1px solid ${(aiScores.credibility ?? 5) >= 7 ? '#1a6b4a' : '#3a3a38'}`, display: 'flex', gap: '6px', alignItems: 'baseline' }}>
-              <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Credibility</span>
-              <span style={{ fontFamily: MONO, fontSize: '13px', fontWeight: 700, color: (aiScores.credibility ?? 5) >= 7 ? '#1a6b4a' : (aiScores.credibility ?? 5) >= 4 ? '#888680' : '#c8472a' }}>{aiScores.credibility ?? '—'}</span>
-              <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>/10</span>
-            </div>
+        {/* Score block */}
+        <div style={{ flex: '0 0 auto', minWidth: isMobile ? 'unset' : '300px' }}>
+
+          {/* Number */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+            <span style={{ fontFamily: MONO, fontSize: isMobile ? '72px' : '96px', fontWeight: 700, lineHeight: 1, color: scoreColor }}>{corroborationScore.toFixed(1)}</span>
+            <span style={{ fontFamily: MONO, fontSize: '28px', fontWeight: 400, color: '#3a3a38', lineHeight: 1 }}>/10</span>
           </div>
 
-          {/* Fact-check warning */}
+          {/* Scale hint */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', maxWidth: '260px' }}>
+            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452', letterSpacing: '0.06em' }}>0 = no sources</span>
+            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452', letterSpacing: '0.06em' }}>10 = fully corroborated</span>
+          </div>
+
+          {/* Verdict badge */}
+          <div style={{
+            fontFamily: MONO, fontSize: '13px', letterSpacing: '0.12em', textTransform: 'uppercase',
+            padding: '12px 20px', marginBottom: '28px',
+            background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}`, display: 'inline-block',
+          }}>
+            {corroborationLabel}
+          </div>
+
+          {/* Fact-checkers */}
           {factCheckArticles.length > 0 && (
-            <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #c8472a', background: 'rgba(200,71,42,0.08)' }}>
-              <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c8472a', marginBottom: '8px', fontWeight: '600' }}>⚠ Fact-checkers flagged this claim</p>
+            <div style={{ padding: '14px 16px', border: '1px solid #c8472a', background: 'rgba(200,71,42,0.08)', maxWidth: '300px' }}>
+              <p style={{ fontFamily: MONO, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c8472a', marginBottom: '10px', fontWeight: '600' }}>⚠ Fact-checkers flagged this</p>
               {factCheckArticles.map((a, i) => (
-                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none', marginBottom: '6px' }}>
-                  <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginRight: '6px' }}>{a.source}</span>
-                  <span style={{ fontFamily: SANS, fontSize: '11px', color: '#c8c8c4', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.title}</span>
+                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none', marginBottom: '8px' }}>
+                  <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', marginRight: '6px' }}>{a.source}</span>
+                  <span style={{ fontFamily: SANS, fontSize: '13px', color: '#c8c8c4', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.title}</span>
                 </a>
               ))}
             </div>
           )}
         </div>
 
-        {/* Arrow */}
-        {witnesses.length > 0 && (
-          <div style={{ flex: '0 0 auto', paddingTop: '80px', color: '#555452', fontFamily: MONO, fontSize: '20px' }}>→</div>
-        )}
-
-        {/* Witnesses */}
-        {witnesses.length > 0 ? (
-          <div style={{ flex: 1, minWidth: isMobile ? '100%' : '300px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', color: '#555452', letterSpacing: '0.12em', marginBottom: '10px' }}>
-              Independent visual witnesses · sorted by scene similarity
-            </p>
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: '4px' }}>
-              {witnesses.map((r, i) => (
-                <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
-                   style={{ flex: '0 0 220px', textDecoration: 'none', display: 'block' }}>
-                  <div style={{ position: 'relative', marginBottom: '12px' }}>
-                    <img
-                      src={`https://img.youtube.com/vi/${r.id}/hqdefault.jpg`}
-                      alt=""
-                      style={{ width: '100%', display: 'block', opacity: 0.85 }}
-                    />
-                    {/* Visual score badge */}
-                    <div style={{
-                      position: 'absolute', top: '6px', right: '6px',
-                      background: scoreCol(r.visualScore),
-                      padding: '3px 7px',
-                      display: 'flex', alignItems: 'baseline', gap: '1px',
-                    }}>
-                      <span style={{ fontFamily: MONO, fontSize: '16px', fontWeight: 700, color: '#f7f4ef', lineHeight: 1 }}>{r.visualScore}</span>
-                      <span style={{ fontFamily: MONO, fontSize: '9px', color: 'rgba(247,244,239,0.6)' }}>/10</span>
-                    </div>
-                    {/* Rank */}
-                    <div style={{ position: 'absolute', top: '6px', left: '6px', background: '#0f0f0e', padding: '2px 5px' }}>
-                      <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680' }}>#{i + 1}</span>
-                    </div>
-                  </div>
-                  <p style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{r.channel}</p>
-                  <p style={{ fontFamily: SANS, fontSize: '12px', color: '#c8c8c4', lineHeight: 1.4, marginBottom: '6px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</p>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontFamily: MONO, fontSize: '9px', color: SOURCE_COLORS[r.sourceType] ?? '#888680', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</span>
-                    <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>{formatH(r.hoursAfterSource)}</span>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div style={{ flex: 1, paddingTop: '60px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '11px', color: '#555452' }}>No visual matches scored — AI vision analysis unavailable or no YouTube sources found.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Narrative + Visual scores side by side */}
-      <div style={{ padding: isMobile ? '20px 20px 0' : '28px 40px 0', display: 'flex', gap: '48px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* AI assessment */}
         {narrative && (
-          <div style={{ flex: '1 1 340px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '10px' }}>AI assessment</p>
-            <p style={{ fontFamily: SANS, fontSize: '15px', color: '#c8c8c4', lineHeight: 1.65 }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <p style={{ fontFamily: MONO, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#888680', margin: 0 }}>AI assessment</p>
+              {!aiAnalysisAvailable && (
+                <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', letterSpacing: '0.06em' }}>— scores estimated (analysis unavailable)</span>
+              )}
+            </div>
+            <p style={{ fontFamily: SANS, fontSize: '16px', color: '#c8c8c4', lineHeight: 1.7, marginBottom: '28px' }}>
               {narrative}
             </p>
+            {/* Stat cards */}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ padding: '14px 18px', border: `1px solid ${(aiScores.outrage ?? 5) >= 7 ? '#c8472a' : '#3a3a38'}`, minWidth: '90px' }}>
+                <div style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Outrage</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontFamily: MONO, fontSize: '28px', fontWeight: 700, color: (aiScores.outrage ?? 5) >= 7 ? '#c8472a' : (aiScores.outrage ?? 5) >= 4 ? '#888680' : '#555452' }}>{aiScores.outrage ?? '—'}</span>
+                  <span style={{ fontFamily: MONO, fontSize: '12px', color: '#555452' }}>/10</span>
+                </div>
+              </div>
+              <div style={{ padding: '14px 18px', border: `1px solid ${(aiScores.credibility ?? 5) >= 7 ? '#1a6b4a' : '#3a3a38'}`, minWidth: '90px' }}>
+                <div style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Credibility</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span style={{ fontFamily: MONO, fontSize: '28px', fontWeight: 700, color: (aiScores.credibility ?? 5) >= 7 ? '#1a6b4a' : (aiScores.credibility ?? 5) >= 4 ? '#888680' : '#c8472a' }}>{aiScores.credibility ?? '—'}</span>
+                  <span style={{ fontFamily: MONO, fontSize: '12px', color: '#555452' }}>/10</span>
+                </div>
+              </div>
+              <div style={{ padding: '14px 18px', border: '1px solid #3a3a38', minWidth: '90px' }}>
+                <div style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Sources</div>
+                <div style={{ fontFamily: MONO, fontSize: '28px', fontWeight: 700, color: '#c8c8c4' }}>{results.length}</div>
+              </div>
+            </div>
           </div>
         )}
-        {/* Inline visual scores */}
-        {results.filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube').length > 0 && (
-          <div style={{ flex: '1 1 260px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.12em', color: '#555452', marginBottom: '14px' }}>Visual similarity scores</p>
-            {results
-              .filter(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
-              .sort((a, b) => b.visualScore - a.visualScore)
-              .map((r, i) => {
-                const col = r.visualScore >= 7 ? '#1a6b4a' : r.visualScore >= 4 ? '#888680' : '#3a3a38'
-                return (
-                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 36px 28px', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-                    <div>
-                      <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginBottom: '4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.channel}</div>
-                      <div style={{ height: '4px', background: '#1a1a18' }}>
-                        <div style={{ height: '100%', width: `${r.visualScore * 10}%`, background: col, transition: 'width 0.6s ease' }} />
-                      </div>
-                    </div>
-                    <span style={{ fontFamily: MONO, fontSize: '13px', fontWeight: 700, color: col, textAlign: 'right' }}>{r.visualScore}</span>
-                    <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452' }}>/10</span>
-                  </div>
-                )
-              })}
-          </div>
-        )}
-      </div>
 
-      {/* Verdict bar */}
-      <div style={{ padding: isMobile ? '20px 20px' : '24px 40px', marginTop: '28px', borderTop: '1px solid #1a1a18', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-          <span style={{ fontFamily: MONO, fontSize: '40px', fontWeight: 700, lineHeight: 1, color: scoreColor }}>{corroborationScore.toFixed(1)}</span>
-          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452', textTransform: 'uppercase', letterSpacing: '0.1em' }}>score</span>
-        </div>
-        <div style={{
-          fontFamily: MONO, fontSize: '10px', letterSpacing: '0.14em', textTransform: 'uppercase', padding: '7px 16px',
-          background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}`,
-        }}>
-          {corroborationLabel}
-        </div>
-        <span style={{ fontFamily: MONO, fontSize: '10px', color: '#555452' }}>{results.length} source{results.length !== 1 ? 's' : ''} found</span>
-        {hasAnyVisual && !hasStrongVisual && (
-          <span style={{ fontFamily: MONO, fontSize: '9px', color: '#555452', fontStyle: 'italic' }}>
-            Visual analysis based on auto-generated thumbnails — accuracy varies
-          </span>
-        )}
-        {outrageMultiplier < 1.0 && (
-          <span style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a' }}>
-            Score penalized {Math.round((1 - outrageMultiplier) * 100)}% — high outrage signal detected
-          </span>
-        )}
       </div>
 
       {/* Score bar */}
       <div style={{ height: '3px', background: '#1a1a18' }}>
-        <div style={{ width: `${Math.min((corroborationScore / 12) * 100, 100)}%`, height: '3px', background: scoreColor, transition: 'width 0.8s ease' }} />
+        <div style={{ width: `${Math.min((corroborationScore / 10) * 100, 100)}%`, height: '3px', background: scoreColor, transition: 'width 0.8s ease' }} />
       </div>
     </div>
   )
@@ -1288,6 +1427,9 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
 
 export default function Home() {
   const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<{ title: string; source: string; publishedAt: string; description: string }[]>([])
+  const [suggLoading, setSuggLoading] = useState(false)
+  const [showSugg, setShowSugg] = useState(false)
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
@@ -1301,6 +1443,8 @@ export default function Home() {
   const [debunked, setDebunked] = useState(false)
   const [agencyCount, setAgencyCount] = useState(0)
   const [factCheckArticles, setFactCheckArticles] = useState<{ title: string; url: string; source: string }[]>([])
+  const [aiAnalysisAvailable, setAiAnalysisAvailable] = useState(false)
+  const [serverUnverifiedRatio, setServerUnverifiedRatio] = useState(0)
 
   // Visual score multiplier — unverified sources get no bonus (same clip re-uploaded ≠ independent corroboration)
   const visualMultiplier = (r: any): number => {
@@ -1332,18 +1476,17 @@ export default function Home() {
   const hasStrongVisual = results.some(r => typeof r.visualScore === 'number' && r.visualScore >= 7 && r.sourceType !== 'unverified')
   const hasAnyVisual = results.some(r => typeof r.visualScore === 'number')
 
-  // Credibility-based verdict (replaces simple corroboration count)
-  const unverifiedRatio = results.length > 0
-    ? results.filter(r => ['unverified','raw'].includes(r.sourceType)).length / results.length
-    : 0
+  // Use server-computed ratio (based on filtered final results, not local raw list)
+  const unverifiedRatio = serverUnverifiedRatio
   const corroborationLabel = (() => {
-    if (results.length === 0) return 'No coverage found'
-    if (debunked) return 'Flagged as false'
-    if (agencyCount > 0 && aiScores.outrage < 6) return hasStrongVisual ? 'Visually confirmed' : 'Credibly reported'
-    if (agencyCount > 0) return 'Reported — verify independently'
-    if (aiScores.outrage >= 7 && unverifiedRatio > 0.5) return 'Suspicious claim'
-    if (aiScores.credibility >= 6) return 'Partially corroborated'
-    return 'Unverified claim'
+    if (results.length === 0) return '✕  No sources found'
+    if (debunked) return '✕  Debunked — false claim'
+    if (corroborationScore >= 6 && agencyCount > 0) return hasStrongVisual ? '✓  Confirmed by major agencies' : '✓  Reported by major agencies'
+    if (corroborationScore >= 3 && agencyCount > 0) return '△  Reported — verify independently'
+    if (corroborationScore >= 3 && aiScores.credibility >= 6) return '△  Partially corroborated'
+    if (aiScores.outrage >= 7 && unverifiedRatio > 0.5) return '⚠  High outrage — suspicious'
+    if (corroborationScore >= 1.5) return '?  Weak signal — few sources'
+    return '?  Unverified — no signal'
   })()
   const corroborationColor = debunked ? 'debunked'
     : agencyCount > 0 && aiScores.outrage < 6 ? 'high'
@@ -1363,17 +1506,50 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
+  // Debounced suggestion fetch
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 3) { setSuggestions([]); setShowSugg(false); return }
+    setSuggLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`)
+        const data = await r.json()
+        setSuggestions(data.suggestions ?? [])
+        setShowSugg(true)
+      } catch {}
+      setSuggLoading(false)
+    }, 400)
+    return () => { clearTimeout(timer); setSuggLoading(false) }
+  }, [query])
+
+  const formatAge = (iso: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const h = Math.floor((Date.now() - d.getTime()) / 3600000)
+    if (h < 1) return 'ora'
+    if (h < 24) return `${h}h fa`
+    const days = Math.floor(h / 24)
+    if (days < 30) return `${days}g fa`
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+  }
+
   const charCount = query.replace(/\s/g, '').length
   const charsNeeded = Math.max(0, 30 - charCount)
 
-  const analyze = async () => {
-    if (!query.trim() || charsNeeded > 0) return
+  const analyze = async (overrideQuery?: string) => {
+    const q = (overrideQuery ?? query).trim()
+    const nonSpace = q.replace(/\s/g, '').length
+    if (!q || (!overrideQuery && nonSpace < 30)) return
+    setShowSugg(false)
+    setSuggestions([])
     setResults([])
     setSearched(false)
     setCheckedQuery('')
     setError(null)
+    if (overrideQuery) setQuery(overrideQuery)
     try {
-      const updated = [query.trim(), ...recentQueries.filter(r => r !== query.trim())].slice(0, 10)
+      const updated = [q, ...recentQueries.filter(r => r !== q)].slice(0, 10)
       localStorage.setItem('convergRecentQueries', JSON.stringify(updated))
       setRecentQueries(updated)
     } catch {}
@@ -1384,11 +1560,13 @@ export default function Home() {
     setDebunked(false)
     setAgencyCount(0)
     setFactCheckArticles([])
+    setAiAnalysisAvailable(false)
+    setServerUnverifiedRatio(0)
     setLoading(true)
     setCurrentStep(0)
 
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
       if (!res.body) throw new Error('No response body')
 
       const reader = res.body.getReader()
@@ -1408,7 +1586,7 @@ export default function Home() {
             if (typeof data.step === 'number') setCurrentStep(data.step)
             if (data._debug) console.log('[AI debug]', data._debug)
             if (data.result) {
-              setCheckedQuery(data.result.query ?? query)
+              setCheckedQuery(data.result.query ?? q)
               setResults(data.result.results ?? [])
               setNarrative(data.result.narrative ?? '')
               setFactCheckArticles(data.result.factCheckArticles ?? [])
@@ -1419,6 +1597,8 @@ export default function Home() {
                 setServerCorroborationScore(typeof s.corroboration === 'number' ? s.corroboration : null)
                 setDebunked(s.debunked ?? false)
                 setAgencyCount(s.agencyCount ?? 0)
+                setAiAnalysisAvailable(s.aiAnalysisAvailable ?? false)
+                setServerUnverifiedRatio(typeof s.unverifiedRatio === 'number' ? s.unverifiedRatio : 0)
               }
               setSearched(true)
               setLoading(false)
@@ -1476,25 +1656,55 @@ export default function Home() {
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
           Describe a news event. Converg searches for corroboration across agencies, independent outlets and raw footage — then scores reliability based on source diversity, timing, language spread and outrage signals.
         </p>
-        <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', marginBottom: '48px', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
-          <input
-            type="text"
-            placeholder="Describe the news…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
-            disabled={loading}
-            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
-          />
-          {mounted && charsNeeded > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
-              {charsNeeded}
-            </span>
+        <div style={{ position: 'relative', marginBottom: '48px' }}>
+          <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
+            <input
+              type="text"
+              placeholder="Describe the news…"
+              value={query}
+              onChange={e => { setQuery(e.target.value) }}
+              onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
+              onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
+              onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+              disabled={loading}
+              style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
+            />
+            {mounted && charsNeeded > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
+                {charsNeeded}
+              </span>
+            )}
+            <button className="analyze-btn" onClick={() => analyze()} disabled={loading || (mounted && charsNeeded > 0)}
+              style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
+              {loading ? '...' : 'Run →'}
+            </button>
+          </div>
+
+          {/* Suggestions dropdown */}
+          {showSugg && !loading && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #0f0f0e', borderTop: 'none', zIndex: 1000, maxHeight: '380px', overflowY: 'auto' }}>
+              {suggLoading && (
+                <div style={{ padding: '14px 20px', fontFamily: MONO, fontSize: '11px', color: '#888680', letterSpacing: '0.06em' }}>Ricerca in corso…</div>
+              )}
+              {!suggLoading && suggestions.length === 0 && (
+                <div style={{ padding: '14px 20px', fontFamily: MONO, fontSize: '11px', color: '#888680', letterSpacing: '0.06em' }}>Nessuna notizia trovata</div>
+              )}
+              {suggestions.map((s, i) => (
+                <div
+                  key={i}
+                  onMouseDown={e => { e.preventDefault(); analyze(s.title) }}
+                  style={{ padding: '12px 20px', borderBottom: i < suggestions.length - 1 ? '1px solid #edeae3' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f7f4ef')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                >
+                  <div style={{ fontFamily: SANS, fontSize: '14px', color: '#0f0f0e', lineHeight: 1.4, marginBottom: '4px' }}>{s.title}</div>
+                  <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.04em' }}>
+                    {s.source}{s.source && s.publishedAt ? ' · ' : ''}{formatAge(s.publishedAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-          <button className="analyze-btn" onClick={analyze} disabled={loading || (mounted && charsNeeded > 0)}
-            style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
-            {loading ? '...' : 'Run →'}
-          </button>
         </div>
 
         {loading && (
@@ -1592,7 +1802,18 @@ export default function Home() {
               {/* Row 6 conditional: reach × timing + visual similarity */}
               {hasViews && <C span={hasVisualScores ? 6 : 12}><ReachBubbles results={results} /></C>}
               {hasVisualScores && <C span={hasViews ? 6 : 12}><VisualMatchChart results={results} /></C>}
-              {hasPlatforms && <C span={12}><PlatformBreakdown results={results} /></C>}
+
+              {/* Row 6: platform spread + source contribution */}
+              {hasPlatforms && <C span={6}><PlatformBreakdown results={results} /></C>}
+              <C span={hasPlatforms ? 6 : 12}><SourceContribution results={results} /></C>
+
+              {/* Row 7: score waterfall + language coverage */}
+              <C span={6}><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
+              <C span={6}><LanguageCoverage results={results} /></C>
+
+              {/* Row 8: red flags + credibility profile */}
+              <C span={6}><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
+              <C span={6}><CredibilityProfile aiScores={aiScores} /></C>
 
             </div>
           ) : (
