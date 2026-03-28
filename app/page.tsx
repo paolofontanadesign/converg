@@ -1,7 +1,10 @@
 'use client'
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, createContext, useContext, useEffect, useRef, useState } from 'react'
 import { zipSync, strToU8 } from 'fflate'
+
+const MobileCtx = createContext(false)
+const useMobile = () => useContext(MobileCtx)
 
 const steps = [
   { key: 'metadata', label: 'Metadata extraction', detail: 'Title · timestamp · location signals' },
@@ -76,10 +79,12 @@ function ChartTooltip({ tip }: { tip: Tip | null }) {
 // ── Shared section header ─────────────────────────────────────────────────────
 
 function ChartHeader({ title, sub }: { title: string; sub: string }) {
+  const mobile = useMobile()
+  const px = mobile ? '0 16px' : undefined
   return (
     <>
-      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px' }}>{title}</p>
-      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '24px' }}>{sub}</p>
+      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f0f0e', marginBottom: '6px', padding: px }}>{title}</p>
+      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '24px', padding: px }}>{sub}</p>
     </>
   )
 }
@@ -889,11 +894,12 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
   const polyStr = (v: number) => Array.from({ length: N }, (_, i) => pt(i, v).join(',')).join(' ')
   const dataStr = axes.map((a, i) => pt(i, a.value).join(',')).join(' ')
 
+  const mobile = useMobile()
   return (
     <div style={{}}>
       <ChartHeader title="Corroboration profile" sub="Six-dimensional view of corroboration quality. Fuller polygon = stronger, more diverse, less emotionally loaded signal." />
-      <div style={{ display: 'flex', gap: '40px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', gap: mobile ? '16px' : '40px', alignItems: mobile ? 'stretch' : 'center', flexWrap: 'wrap', padding: mobile ? '0 16px' : undefined }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: mobile ? '100%' : 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
           {[0.25, 0.5, 0.75, 1].map(level => (
             <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 1 : 0.5} />
           ))}
@@ -1249,11 +1255,12 @@ function UploadClock({ results }: { results: any[] }) {
   const activeHours = counts.filter(c => c > 0).length
   const clockLabels = [0, 6, 12, 18]
 
+  const mobile = useMobile()
   return (
     <div style={{}}>
       <ChartHeader title="Upload clock" sub="Hour of day (UTC) when each source was uploaded. Clustered bars may indicate scheduled or coordinated activity." />
-      <div style={{ display: 'flex', gap: '48px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', gap: mobile ? '16px' : '48px', alignItems: mobile ? 'stretch' : 'center', flexWrap: 'wrap', padding: mobile ? '0 16px' : undefined }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: mobile ? '100%' : 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
           {/* Inner circle */}
           <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="1" />
           {/* Outer ring guide */}
@@ -1543,40 +1550,53 @@ export default function Home() {
   const charCount = query.replace(/\s/g, '').length
   const charsNeeded = Math.max(0, 30 - charCount)
 
+  function svgFileFromCell(cell: Element): string | null {
+    // Skip button SVGs (download icons) — find only chart SVGs
+    const svgs = Array.from(cell.querySelectorAll('svg'))
+    const svg = svgs.find(s => !s.closest('button'))
+    if (!svg) return null
+    const vb = svg.getAttribute('viewBox') ?? '0 0 800 400'
+    const parts = vb.trim().split(/[\s,]+/).map(Number)
+    const [, , vw = 800, vh = 400] = parts
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${vb}" width="${vw}" height="${vh}">\n  <rect width="${vw}" height="${vh}" fill="#f7f4ef"/>\n  ${svg.innerHTML}\n</svg>`
+  }
+
   function downloadChartsSVG() {
     const container = chartsRef.current
     if (!container) return
-    const svgs = Array.from(container.querySelectorAll('svg'))
-    if (svgs.length === 0) return
+    const cells = Array.from(container.querySelectorAll('[data-chart-name]'))
+    if (cells.length === 0) return
 
-    const WIDTH = 800
-    const GAP = 20
-    let offsetY = 0
-    const groups: string[] = []
-
-    svgs.forEach(svg => {
-      const vb = svg.getAttribute('viewBox')
-      if (!vb) return
-      const parts = vb.trim().split(/[\s,]+/).map(Number)
-      if (parts.length < 4) return
-      const [, , vw, vh] = parts
-      if (!vw || !vh) return
-      const scaledH = (vh / vw) * WIDTH
-      groups.push(
-        `<svg x="0" y="${offsetY.toFixed(1)}" width="${WIDTH}" height="${scaledH.toFixed(1)}" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg">${svg.innerHTML}</svg>`
-      )
-      offsetY += scaledH + GAP
+    const files: Record<string, Uint8Array> = {}
+    cells.forEach(cell => {
+      const name = cell.getAttribute('data-chart-name') || 'chart'
+      const content = svgFileFromCell(cell)
+      if (content) files[`${name}.svg`] = strToU8(content)
     })
 
-    if (groups.length === 0) return
-    const totalH = offsetY - GAP
+    if (Object.keys(files).length === 0) return
+    const zip = zipSync(files)
     const slug = checkedQuery.slice(0, 40).replace(/[^a-z0-9]+/gi, '-').toLowerCase()
-    const svgStr = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${WIDTH}" height="${totalH.toFixed(1)}" viewBox="0 0 ${WIDTH} ${totalH.toFixed(1)}">\n  <rect width="${WIDTH}" height="${totalH.toFixed(1)}" fill="#f7f4ef"/>\n  ${groups.join('\n  ')}\n</svg>`
-    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' })
+    const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `converg-${slug || 'charts'}.svg`
+    a.download = `converg-${slug || 'charts'}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function downloadSingleChart(cell: Element) {
+    const name = cell.getAttribute('data-chart-name') || 'chart'
+    const content = svgFileFromCell(cell)
+    if (!content) return
+    const blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}.svg`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1675,9 +1695,27 @@ export default function Home() {
   const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
 
   // Card wrapper for dashboard grid cells
-  const C = ({ children, span = 6, bg = '#f7f4ef', style }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties }) => (
-    <div style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 16px' : '32px 28px', minWidth: 0, overflow: 'hidden', ...style }}>{children}</div>
-  )
+  const C = ({ children, span = 6, bg = '#f7f4ef', style, name, noSvg }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string; noSvg?: boolean }) => {
+    const cellRef = useRef<HTMLDivElement>(null)
+    return (
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: 'hidden', position: 'relative', ...style }}>
+        {children}
+        {name && !noSvg && (
+          <button
+            title={`Download ${name}`}
+            onClick={() => cellRef.current && downloadSingleChart(cellRef.current)}
+            style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.35, lineHeight: 1 }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '0.35')}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="#0f0f0e" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <main style={{ background: '#f7f4ef', minHeight: '100vh' }}>
@@ -1823,48 +1861,50 @@ export default function Home() {
           />
 
           {results.length > 0 ? (
+            <MobileCtx.Provider value={isMobile}>
             <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
 
               {/* Row 1: score buildup + score anatomy */}
-              <C span={8}><CorroborationBuildup results={results} /></C>
-              <C span={4}><ScoreAnatomy results={results} /></C>
+              <C span={8} name="corroboration-buildup"><CorroborationBuildup results={results} /></C>
+              <C span={4} name="score-anatomy"><ScoreAnatomy results={results} /></C>
 
               {/* Row 2: corroboration profile + clock */}
-              <C span={hasUploadClock ? 6 : 12}><DiversityRadar results={results} aiScores={aiScores} /></C>
-              {hasUploadClock && <C span={6}><UploadClock results={results} /></C>}
+              <C span={hasUploadClock ? 6 : 12} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
+              {hasUploadClock && <C span={6} name="upload-clock"><UploadClock results={results} /></C>}
 
               {/* Row 2b: language coverage (left) + reach × timing (right, same col as clock) */}
-              {hasViews && <C span={6}><LanguageCoverage results={results} /></C>}
-              {hasViews && <C span={6} style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
+              {hasViews && <C span={6} name="language-coverage" noSvg><LanguageCoverage results={results} /></C>}
+              {hasViews && <C span={6} name="reach-timing" style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
 
               {/* Row 3: swim lanes + title independence */}
-              <C span={8}><SwimLanes results={results} /></C>
-              <C span={4}>{hasOverlap ? <OverlapMatrix results={results} /> : <VelocityHistogram results={results} />}</C>
+              <C span={8} name="swim-lanes"><SwimLanes results={results} /></C>
+              <C span={4} name={hasOverlap ? 'overlap-matrix' : 'velocity-histogram'}>{hasOverlap ? <OverlapMatrix results={results} /> : <VelocityHistogram results={results} />}</C>
 
               {/* Row 4: witness matrix + keyword frequency */}
-              <C span={7}><WitnessMatrix results={results} /></C>
-              <C span={5}><KeywordFrequency results={results} /></C>
+              <C span={7} name="witness-matrix"><WitnessMatrix results={results} /></C>
+              <C span={5} name="keyword-frequency"><KeywordFrequency results={results} /></C>
 
               {/* Row 5: who reported this — full width, always */}
-              <C span={12} bg={debunked ? '#1a0808' : '#f2efe9'}>
+              <C span={12} name="who-reported-it" noSvg bg={debunked ? '#1a0808' : '#f2efe9'}>
                 <WhoReportedIt results={results} debunked={debunked} suspicious={corroborationColor === 'suspicious'} />
               </C>
 
               {/* Row 6 conditional: visual similarity only */}
-              {hasVisualScores && <C span={12}><VisualMatchChart results={results} /></C>}
+              {hasVisualScores && <C span={12} name="visual-match"><VisualMatchChart results={results} /></C>}
 
               {/* Row 6: platform spread + source contribution */}
-              {hasPlatforms && <C span={6}><PlatformBreakdown results={results} /></C>}
-              <C span={hasPlatforms ? 6 : 12}><SourceContribution results={results} /></C>
+              {hasPlatforms && <C span={6} name="platform-breakdown"><PlatformBreakdown results={results} /></C>}
+              <C span={hasPlatforms ? 6 : 12} name="source-contribution" noSvg><SourceContribution results={results} /></C>
 
               {/* Row 7: score waterfall — full width */}
-              <C span={12}><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
+              <C span={12} name="score-waterfall" noSvg><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
 
               {/* Row 8: red flags + credibility profile */}
-              <C span={6}><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
-              <C span={6}><CredibilityProfile aiScores={aiScores} /></C>
+              <C span={6} name="red-flags" noSvg><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
+              <C span={6} name="credibility-profile" noSvg><CredibilityProfile aiScores={aiScores} /></C>
 
             </div>
+            </MobileCtx.Provider>
           ) : (
             <div style={{ maxWidth: '760px', margin: '48px 0', padding: isMobile ? '0 20px' : '0 40px' }}>
               <div style={{ border: '1px solid #edeae3', background: 'white', padding: '32px' }}>
@@ -1879,15 +1919,15 @@ export default function Home() {
 
       {/* ── Download charts ────────────────────────────────────────────────── */}
       {searched && !loading && results.length > 0 && (
-        <div style={{ padding: isMobile ? '20px 20px' : '20px 0 0', display: 'flex', justifyContent: isMobile ? 'stretch' : 'flex-end', paddingRight: isMobile ? undefined : '0' }}>
+        <div style={{ padding: isMobile ? '20px' : '20px 0 0', display: 'flex', justifyContent: 'center' }}>
           <button
             onClick={downloadChartsSVG}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: '1px solid #0f0f0e', padding: '10px 20px', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: '#0f0f0e', cursor: 'pointer', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: '1px solid #0f0f0e', padding: '10px 20px', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: '#0f0f0e', cursor: 'pointer', justifyContent: 'center' }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="#0f0f0e" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            DOWNLOAD CHARTS AS SVG
+            DOWNLOAD ALL CHARTS (.ZIP)
           </button>
         </div>
       )}
