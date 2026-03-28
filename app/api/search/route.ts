@@ -224,7 +224,7 @@ export async function GET(request: NextRequest) {
         // ── Step 2: Parallel search (no date filter — covers all time) ────
         send({ step: 2 })
 
-        const [ytResponses, newsData, factCheckData, tiktokData, instaData, gdeltData, guardianData] = await Promise.all([
+        const [ytResponses, newsData, factCheckData, tiktokData, instaData, gdeltData] = await Promise.all([
           youtubeKey
             ? Promise.all([
                 fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchQueries[0])}&type=video&order=relevance&maxResults=15&key=${youtubeKey}`).then(r => r.json()).catch(() => ({ items: [] })),
@@ -254,8 +254,6 @@ export async function GET(request: NextRequest) {
           // GDELT — no key needed, global news database
           fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(searchQueries[1])}&mode=artlist&maxrecords=25&format=json&timespan=3months&sort=DateDesc`)
             .then(r => r.json()).catch(() => ({ articles: [] })),
-
-          Promise.resolve(null),
         ])
 
         if (ytResponses.some((d: any) => d.error?.code === 403)) {
@@ -415,8 +413,6 @@ export async function GET(request: NextRequest) {
             }
           })
 
-        const guardianItems: any[] = []
-
         // Bing social
         const parseBingItems = (data: any, platform: 'tiktok' | 'instagram') => {
           if (!data?.webPages?.value) return []
@@ -450,7 +446,7 @@ export async function GET(request: NextRequest) {
           ...parseBingItems(instaData, 'instagram'),
         ]
 
-        const allResults = [...videoItems, ...articleItems, ...gdeltItems, ...guardianItems, ...socialResults]
+        const allResults = [...videoItems, ...articleItems, ...gdeltItems, ...socialResults]
 
         if (allResults.length === 0) {
           send({ result: { query, scores: { corroboration: 0, outrage: 5, simplicity: 5, credibility: 5, debunked: false, agencyCount: 0, factCheckCount: 0 }, results: [], narrative: '', factCheckArticles: [] } })

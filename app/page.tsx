@@ -593,7 +593,7 @@ function VisualMatchChart({ results }: { results: any[] }) {
 
 // ── Who reported this ─────────────────────────────────────────────────────────
 
-const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, unverified: 3, raw: 4, secondary: 5, aggregated: 6 }
+const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, raw: 3, unverified: 4, secondary: 5, aggregated: 6 }
 
 // Detects sources that are debunking/fact-checking the claim rather than spreading it
 const debunkRe = /bufala|bufale|debunked?|fact.?check|hoax|fake.news|smentis|disinformation|misinformation|è.falso|it.s.fake|it.s.false|not.true|untrue/i
@@ -1196,20 +1196,35 @@ export default function Home() {
         </p>
         <div style={{ position: 'relative', marginBottom: '48px' }}>
           <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
-            <input
-              type="text"
-              placeholder="Describe the news…"
-              value={query}
-              maxLength={100}
-              onChange={e => { setQuery(e.target.value) }}
-              onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
-              onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
-              onBlur={() => setTimeout(() => setShowSugg(false), 150)}
-              disabled={loading}
-              style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
-            />
+            {isMobile ? (
+              <textarea
+                placeholder="Describe the news…"
+                value={query}
+                maxLength={100}
+                rows={3}
+                onChange={e => { setQuery(e.target.value) }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !loading) { e.preventDefault(); analyze() } }}
+                onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
+                onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+                disabled={loading}
+                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent', resize: 'none', lineHeight: '1.5' }}
+              />
+            ) : (
+              <input
+                type="text"
+                placeholder="Describe the news…"
+                value={query}
+                maxLength={100}
+                onChange={e => { setQuery(e.target.value) }}
+                onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
+                onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
+                onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+                disabled={loading}
+                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
+              />
+            )}
             <button className="analyze-btn" onClick={() => analyze()} disabled={loading}
-              style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
+              style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap', alignSelf: isMobile ? 'flex-start' : undefined }}>
               {loading ? '...' : 'Run →'}
             </button>
           </div>
