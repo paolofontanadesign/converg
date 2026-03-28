@@ -904,6 +904,7 @@ export default function Home() {
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const chartsRef = useRef<HTMLDivElement>(null)
+  const suppressSuggRef = useRef(false)
   const [searched, setSearched] = useState(false)
   const [currentStep, setCurrentStep] = useState(-1)
   const [checkedQuery, setCheckedQuery] = useState<string>('')
@@ -992,7 +993,7 @@ export default function Home() {
         const r = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`)
         const data = await r.json()
         setSuggestions(data.suggestions ?? [])
-        setShowSugg(true)
+        if (!suppressSuggRef.current) setShowSugg(true)
       } catch {}
       setSuggLoading(false)
     }, 400)
@@ -1067,6 +1068,7 @@ export default function Home() {
   const analyze = async (overrideQuery?: string) => {
     const q = (overrideQuery ?? query).trim()
     if (!q) return
+    suppressSuggRef.current = true
     setShowSugg(false)
     setSuggestions([])
     setResults([])
@@ -1204,7 +1206,7 @@ export default function Home() {
                 rows={3}
                 onChange={e => { setQuery(e.target.value) }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !loading) { e.preventDefault(); analyze() } }}
-                onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
+                onFocus={() => { suppressSuggRef.current = false; (suggestions.length > 0 || suggLoading) && setShowSugg(true) }}
                 onBlur={() => setTimeout(() => setShowSugg(false), 150)}
                 disabled={loading}
                 style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent', resize: 'none', lineHeight: '1.5' }}
@@ -1217,7 +1219,7 @@ export default function Home() {
                 maxLength={100}
                 onChange={e => { setQuery(e.target.value) }}
                 onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
-                onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
+                onFocus={() => { suppressSuggRef.current = false; (suggestions.length > 0 || suggLoading) && setShowSugg(true) }}
                 onBlur={() => setTimeout(() => setShowSugg(false), 150)}
                 disabled={loading}
                 style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}

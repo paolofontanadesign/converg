@@ -507,13 +507,15 @@ export async function GET(request: NextRequest) {
             max_tokens: 300,
             messages: [{
               role: 'user',
-              content: `Analyze this news claim and its sources for credibility. Respond with JSON only (no markdown):
-{"narrative":"max 40 words: one direct verdict sentence on credibility, then one sentence on source mix. No hedging, no repetition.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
+              content: `You are a corroboration analyst. Your job is to assess what the PROVIDED SOURCES say about a claim — NOT to fact-check it against your training data. Your training knowledge is stale; the sources are current. Respond with JSON only (no markdown):
+{"narrative":"max 40 words: what the found sources collectively say about the claim, then one sentence on source diversity. No verdicts from your own knowledge. No hedging.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
+
+CRITICAL: Do NOT use your pre-training knowledge to evaluate truth. Base ALL scores only on the provided source titles and metadata.
 
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
-simplicityScore: narrative consistency across sources (10=all consistent, 0=contradictory)
-credibilityScore: factual accuracy of the CLAIM ITSELF (0=core fact is false or fabricated — event never happened, person never said that; 2=real event but claim heavily misrepresents it, e.g. puts false words in someone's mouth; 4=real event, misleading framing or unverified details; 6=real event, likely accurate, some credible sourcing; 8=factually confirmed by credible news sources; 10=confirmed by major agencies like AP/Reuters/AFP). IMPORTANT: dramatic or sensationalist headline language does NOT lower this score if the underlying event is real and verifiable. Only lower the score when the CORE FACT of the claim is false or fabricated.
-irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim — e.g. a UFO sighting video when the claim is about a nuclear reactor design, or a sports article when the claim is about a flood. Keep results that discuss the same claim in any language, any framing, or any angle (including debunks, news coverage, raw footage). Do NOT mark a result just because it is in a different language or uses different words for the same subject.
+simplicityScore: narrative consistency across sources (10=all tell the same story, 0=sources contradict each other)
+credibilityScore: how strongly the PROVIDED SOURCES confirm the claim (0=sources actively debunk or contradict it; 3=no relevant sources found; 5=tangentially related coverage only; 7=some credible sources report on it; 9=multiple credible outlets confirm; 10=wire agencies like AP/Reuters/AFP explicitly confirm). If agency or major-outlet sources cover the claim without debunking it, score HIGH even if the claim seems unusual — recent events can surprise. Only score LOW if sources explicitly deny or debunk the claim.
+irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim — e.g. a UFO sighting video when the claim is about a nuclear reactor design. Keep results that discuss the same claim in any language, framing, or angle (including debunks). Do NOT mark a result just because it uses different words for the same subject.
 
 Claim: "${query}"
 Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
