@@ -1547,8 +1547,6 @@ export default function Home() {
     return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
   }
 
-  const charCount = query.replace(/\s/g, '').length
-  const charsNeeded = Math.max(0, 30 - charCount)
 
   function svgFileFromCell(cell: Element): string | null {
     // Skip button SVGs (download icons) — find only chart SVGs
@@ -1605,8 +1603,7 @@ export default function Home() {
 
   const analyze = async (overrideQuery?: string) => {
     const q = (overrideQuery ?? query).trim()
-    const nonSpace = q.replace(/\s/g, '').length
-    if (!q || (!overrideQuery && nonSpace < 30)) return
+    if (!q) return
     setShowSugg(false)
     setSuggestions([])
     setResults([])
@@ -1746,6 +1743,7 @@ export default function Home() {
               type="text"
               placeholder="Describe the news…"
               value={query}
+              maxLength={100}
               onChange={e => { setQuery(e.target.value) }}
               onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
               onFocus={() => (suggestions.length > 0 || suggLoading) && setShowSugg(true)}
@@ -1753,12 +1751,7 @@ export default function Home() {
               disabled={loading}
               style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
             />
-            {mounted && charsNeeded > 0 && (
-              <span style={{ display: 'flex', alignItems: 'center', padding: '0 16px', fontFamily: MONO, fontSize: '15px', fontWeight: 600, color: charCount === 0 ? '#b0a8a0' : charCount >= 20 ? '#1a6b4a' : charCount >= 10 ? '#b07a3a' : '#c8472a', borderLeft: '1px solid #edeae3', transition: 'color 0.2s', whiteSpace: 'nowrap', minWidth: '48px', justifyContent: 'center' }}>
-                {charsNeeded}
-              </span>
-            )}
-            <button className="analyze-btn" onClick={() => analyze()} disabled={loading || (mounted && charsNeeded > 0)}
+            <button className="analyze-btn" onClick={() => analyze()} disabled={loading}
               style={{ border: 'none', borderLeft: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: loading ? '#888680' : '#0f0f0e', color: '#f7f4ef', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '16px 12px', cursor: loading ? 'default' : 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}>
               {loading ? '...' : 'Run →'}
             </button>
