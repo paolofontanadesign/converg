@@ -219,13 +219,18 @@ function CorroborationBuildup({ results }: { results: any[] }) {
 
 // ── Chart 2: Source type swim lanes × time ───────────────────────────────────
 
+const SOURCE_LABELS_SHORT: Record<string, string> = {
+  agency: 'Agency', major: 'Major', independent: 'Indep.', unverified: 'Unverf.', raw: 'Raw', secondary: 'Second.', aggregated: 'Aggr.',
+}
+
 function SwimLanes({ results }: { results: any[] }) {
   const [tip, setTip] = useState<Tip | null>(null)
   const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
   const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
   const hide = () => setTip(null)
+  const mobile = useMobile()
 
-  const W = 620, laneH = 52, pL = 110, pR = 24, pT = 16, pB = 36
+  const W = 620, laneH = 52, pL = mobile ? 68 : 110, pR = 24, pT = 16, pB = 36
   const xMin = -48, xMax = 48, plotW = W - pL - pR
   const allLanes = ['agency', 'major', 'independent', 'unverified', 'raw', 'secondary', 'aggregated'] as const
   const lanes = allLanes.filter(l => results.some(r => r.sourceType === l))
@@ -253,8 +258,8 @@ function SwimLanes({ results }: { results: any[] }) {
             <g key={lane}>
               <rect x={pL} y={y + 8} width={plotW} height={laneH - 18} fill={li % 2 === 0 ? '#f7f4ef' : '#f2efe9'} rx="2" />
               {/* lane label + count */}
-              <text x={pL - 10} y={y + laneH / 2 - 5} textAnchor="end" fontSize="11" fill={SOURCE_COLORS[lane]} fontFamily={MONO} fontWeight="600">{SOURCE_LABELS[lane]}</text>
-              <text x={pL - 10} y={y + laneH / 2 + 9} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{count} source{count !== 1 ? 's' : ''}</text>
+              <text x={pL - 6} y={y + laneH / 2 - 5} textAnchor="end" fontSize={mobile ? 9 : 11} fill={SOURCE_COLORS[lane]} fontFamily={MONO} fontWeight="600">{mobile ? SOURCE_LABELS_SHORT[lane] : SOURCE_LABELS[lane]}</text>
+              <text x={pL - 6} y={y + laneH / 2 + 9} textAnchor="end" fontSize={mobile ? 8 : 10} fill="#888680" fontFamily={MONO}>{count}x</text>
               {/* dots */}
               {laneResults.map((r, i) => (
                 <circle
@@ -641,6 +646,34 @@ function SvgResultsTable({ rows, darkBg }: { rows: any[]; darkBg: boolean }) {
   )
 }
 
+function MobileResultsList({ rows, darkBg }: { rows: any[]; darkBg: boolean }) {
+  const isArticle = (r: any) => ['agency','major','independent','unverified'].includes(r.sourceType)
+  const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : ''
+  const textColor = darkBg ? '#f7f4ef' : '#0f0f0e'
+  const subColor  = darkBg ? '#c8c8c4' : '#3a3a38'
+  const lineColor = darkBg ? 'rgba(255,255,255,0.08)' : '#f0ede6'
+  return (
+    <div style={{ padding: '0 16px' }}>
+      {rows.map((r, i) => {
+        const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
+        const views = fmtViews(r.viewCount ?? 0)
+        return (
+          <a key={i} href={r.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none', borderBottom: `1px solid ${lineColor}`, padding: '12px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+              <span style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</span>
+              <span style={{ fontFamily: MONO, fontSize: '9px', color: subColor === '#3a3a38' ? '#888680' : '#888680' }}>{r.channel}</span>
+              {views && <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginLeft: 'auto', flexShrink: 0 }}>{views}</span>}
+            </div>
+            <p style={{ fontFamily: SANS, fontSize: '13px', color: textColor, lineHeight: 1.4, margin: 0 }}>{r.title}</p>
+            <span style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px', display: 'inline-block' }}>{isArticle(r) ? 'Read →' : 'Watch →'}</span>
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
 function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debunked: boolean; suspicious: boolean }) {
   const mobile = useMobile()
   if (results.length === 0) return null
@@ -656,6 +689,9 @@ function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debu
     : 'Sources that covered this story. Publishing is a choice — sorted by how much their verification process is worth trusting.'
 
   const px = mobile ? '0 16px' : undefined
+  const ResultsView = ({ rows, darkBg }: { rows: any[]; darkBg: boolean }) =>
+    mobile ? <MobileResultsList rows={rows} darkBg={darkBg} /> : <SvgResultsTable rows={rows} darkBg={darkBg} />
+
   return (
     <div>
       <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: debunked ? '#c8472a' : '#0f0f0e', marginBottom: '6px', padding: px }}>{title}</p>
@@ -663,12 +699,12 @@ function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debu
       {debunked && (
         <p style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '20px', padding: px }}>● Claim independently debunked by fact-checkers</p>
       )}
-      {spreadRows.length > 0 && <SvgResultsTable rows={spreadRows} darkBg={debunked} />}
+      {spreadRows.length > 0 && <ResultsView rows={spreadRows} darkBg={debunked} />}
       {debunkRows.length > 0 && (
         <div style={{ marginTop: spreadRows.length > 0 ? '32px' : '0' }}>
           <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1a6b4a', marginBottom: '6px', padding: px }}>Who debunked it</p>
           <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '16px', padding: px }}>These sources investigated and contradicted the claim.</p>
-          <SvgResultsTable rows={debunkRows} darkBg={debunked} />
+          <ResultsView rows={debunkRows} darkBg={debunked} />
         </div>
       )}
     </div>
@@ -1154,7 +1190,7 @@ export default function Home() {
   const C = ({ children, span = 6, bg = '#f7f4ef', style, name, noSvg }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string; noSvg?: boolean }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     return (
-      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: 'hidden', position: 'relative', ...style }}>
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: isMobile ? 'visible' : 'hidden', position: 'relative', ...style }}>
         {children}
         {name && !noSvg && (
           <button
