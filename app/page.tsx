@@ -92,6 +92,7 @@ function ChartHeader({ title, sub }: { title: string; sub: string }) {
 // ── Chart 1: Cumulative corroboration score over time ────────────────────────
 
 function CorroborationBuildup({ results }: { results: any[] }) {
+  const mobile = useMobile()
   const [tip, setTip] = useState<Tip | null>(null)
   const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
   const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
@@ -124,24 +125,44 @@ function CorroborationBuildup({ results }: { results: any[] }) {
   const showPartial = yMax >= 2
   const showCorr = yMax >= 6
 
+  // Summary stats
+  const finalScore = Math.min(cum, 10)
+  const hours = sorted.map(r => r.hoursAfterSource)
+  const timeSpan = hours.length > 1 ? Math.max(...hours) - Math.min(...hours) : 0
+  const corrHit = events.find(e => e.score >= 6)
+  const corrHitH = corrHit ? corrHit.r.hoursAfterSource : null
+  const byType = Object.entries(
+    sorted.reduce((acc: Record<string, number>, r) => {
+      acc[r.sourceType] = (acc[r.sourceType] ?? 0) + 1
+      return acc
+    }, {})
+  ).sort((a, b) => (SOURCE_RANK[a[0]] ?? 9) - (SOURCE_RANK[b[0]] ?? 9))
+
+  const fmtH = (h: number) => {
+    const r = Math.round(Math.abs(h))
+    if (r < 1) return '< 1h'
+    if (r >= 24) return `${Math.round(r / 24)}d`
+    return `${r}h`
+  }
+  const stats = [
+    { label: 'Final score', value: `${finalScore.toFixed(1)} / 10`, color: finalScore >= 6 ? '#1a6b4a' : finalScore >= 2 ? '#888680' : '#c8472a' },
+    { label: 'Sources', value: String(sorted.length), color: '#0f0f0e' },
+    { label: 'Time span', value: fmtH(timeSpan), color: '#888680' },
+    { label: corrHitH !== null ? 'Corroborated at' : 'Status', value: corrHitH !== null ? (corrHitH >= 0 ? `+${fmtH(corrHitH)}` : `-${fmtH(corrHitH)}`) : 'Not yet', color: corrHitH !== null ? '#1a6b4a' : '#c8472a' },
+  ]
+
   return (
-    <div style={{}}>
-      <ChartHeader title="Corroboration buildup" sub="Cumulative corroboration score as independent footage accumulates. Each step up is a new source." />
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <ChartHeader title="Corroboration buildup" sub="Cumulative score as independent sources accumulate. Each step is a new source." />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
-        {/* threshold bands */}
         {showCorr && <rect x={pL} y={pT} width={plotW} height={yS(6) - pT} fill="rgba(26,107,74,0.04)" />}
-        {/* grid */}
         <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
         {showPartial && <line x1={pL} y1={yS(2)} x2={W - pR} y2={yS(2)} stroke="#888680" strokeWidth="0.75" strokeDasharray="4,4" />}
         {showCorr && <line x1={pL} y1={yS(6)} x2={W - pR} y2={yS(6)} stroke="#1a6b4a" strokeWidth="0.75" strokeDasharray="4,4" />}
-        {/* source video line */}
         <line x1={x0} y1={pT} x2={x0} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" />
         <text x={x0} y={pT - 8} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>source</text>
-        {/* area fill */}
         <path d={fill} fill="#0f0f0e" opacity="0.05" />
-        {/* score line */}
         <path d={d} fill="none" stroke="#0f0f0e" strokeWidth="2" strokeLinejoin="round" />
-        {/* threshold labels — full size, left-anchored */}
         {showPartial && (
           <>
             <rect x={pL} y={yS(2) - 14} width={58} height={16} fill="#f7f4ef" />
@@ -154,32 +175,43 @@ function CorroborationBuildup({ results }: { results: any[] }) {
             <text x={pL + 4} y={yS(6) - 3} fontSize="10" fill="#1a6b4a" fontFamily={MONO} fontWeight="600">corroborated</text>
           </>
         )}
-        {/* Y axis ticks */}
         {showPartial && <text x={pL - 6} y={yS(2) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>2</text>}
         {showCorr && <text x={pL - 6} y={yS(6) + 4} textAnchor="end" fontSize="10" fill="#1a6b4a" fontFamily={MONO}>6</text>}
         <text x={pL - 6} y={yS(0) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>0</text>
-        {/* X axis labels */}
         <text x={pL} y={H - 10} textAnchor="middle" fontSize="10" fill="#888680" fontFamily={MONO}>−48h</text>
         <text x={x0} y={H - 10} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>0</text>
         <text x={W - pR} y={H - 10} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>+48h</text>
-        {/* event dots — colored by sourceType, hoverable */}
         {events.map(({ h, score, r }, i) => (
-          <circle
-            key={i}
-            cx={xS(h)} cy={yS(score)} r={6}
+          <circle key={i} cx={xS(h)} cy={yS(score)} r={6}
             fill={SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'}
-            stroke="#f7f4ef" strokeWidth="1.5"
-            style={{ cursor: 'pointer' }}
+            stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
             onMouseEnter={e => show(e, [
               r.channel,
               `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]} · +${SOURCE_WEIGHTS[r.sourceType]}pts`,
               `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source · score → ${score.toFixed(1)}`,
             ])}
-            onMouseMove={move}
-            onMouseLeave={hide}
+            onMouseMove={move} onMouseLeave={hide}
           />
         ))}
       </svg>
+
+      {/* Data summary below chart */}
+      <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', borderTop: '1px solid #edeae3', padding: mobile ? '0 16px' : undefined }}>
+        {stats.map(s => (
+          <div key={s.label} style={{ padding: '12px 0', borderBottom: '1px solid #f0ede6' }}>
+            <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{s.label}</div>
+            <div style={{ fontFamily: MONO, fontSize: '16px', fontWeight: 700, color: s.color }}>{s.value}</div>
+          </div>
+        ))}
+        {byType.map(([type, count]) => (
+          <div key={type} style={{ padding: '9px 0', borderBottom: '1px solid #f0ede6', display: 'grid', gridTemplateColumns: '10px 1fr 24px', gap: '8px', alignItems: 'center' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: SOURCE_COLORS[type as keyof typeof SOURCE_COLORS] ?? '#888680' }} />
+            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e' }}>{SOURCE_LABELS[type as keyof typeof SOURCE_LABELS] ?? type}</span>
+            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', textAlign: 'right' }}>{count}</span>
+          </div>
+        ))}
+      </div>
+
       <ChartTooltip tip={tip} />
     </div>
   )
@@ -260,323 +292,11 @@ function SwimLanes({ results }: { results: any[] }) {
   )
 }
 
-// ── Chart 3: Score composition breakdown ─────────────────────────────────────
-
-function ScoreAnatomy({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  const segmentDefs = [
-    { key: 'agency',      label: 'News agency',    weight: 4,   color: '#1a4a8a' },
-    { key: 'major',       label: 'Major outlet',   weight: 2,   color: '#2a6a9a' },
-    { key: 'independent', label: 'Independent',    weight: 1,   color: '#5a7a5a' },
-    { key: 'unverified',  label: 'Unverified',     weight: 0.5, color: '#b0a8a0' },
-    { key: 'raw',         label: 'Raw footage',    weight: 3,   color: '#1a6b4a' },
-    { key: 'secondary',   label: 'Secondary',      weight: 1.5, color: '#3a3a38' },
-    { key: 'aggregated',  label: 'News package',   weight: 0.5, color: '#c8c8c4' },
-  ]
-  const segments = segmentDefs.map(s => ({
-    ...s,
-    count: results.filter(r => r.sourceType === s.key).length,
-    score: results.filter(r => r.sourceType === s.key).length * s.weight,
-  })).filter(s => s.count > 0)
-
-  const total = segments.reduce((s, seg) => s + seg.score, 0)
-  if (total === 0) return null
-  const pct = (n: number) => `${Math.round((n / total) * 100)}%`
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Score anatomy" sub="Raw footage contributes 6× more than a news package — outlets report without independently verifying." />
-      {/* stacked bar */}
-      <div style={{ height: '28px', display: 'flex', gap: '2px', marginBottom: '28px', borderRadius: '1px', overflow: 'hidden' }}>
-        {segments.map(s => (
-          <div
-            key={s.key}
-            style={{ width: `${(s.score / total) * 100}%`, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'default', transition: 'opacity 0.15s' }}
-            onMouseEnter={e => show(e, [`${s.label}`, `${s.count} source${s.count > 1 ? 's' : ''} × ${s.weight}pts = ${s.score.toFixed(1)}`, `${pct(s.score)} of total score`])}
-            onMouseMove={move}
-            onMouseLeave={hide}
-          >
-            {(s.score / total) > 0.12 && (
-              <span style={{ fontFamily: MONO, fontSize: '10px', color: (s.key === 'aggregated' || s.key === 'unverified') ? '#888680' : 'white', fontWeight: '600' }}>{s.score.toFixed(1)}</span>
-            )}
-          </div>
-        ))}
-      </div>
-      {/* rows */}
-      {segments.map(s => (
-        <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderBottom: '1px solid #f0ede6' }}>
-          <div style={{ width: '14px', height: '14px', background: s.color, flexShrink: 0, border: (s.key === 'aggregated' || s.key === 'unverified') ? '1px solid #b0b0a8' : 'none' }} />
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', flex: 1 }}>{s.label}</span>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{s.count} × {s.weight} pts</span>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', width: '40px', textAlign: 'right' }}>{pct(s.score)}</span>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', width: '36px', textAlign: 'right', fontWeight: '600' }}>{s.score.toFixed(1)}</span>
-        </div>
-      ))}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '20px', paddingTop: '12px' }}>
-        <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>Total corroboration score</span>
-        <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', fontWeight: '600' }}>{total.toFixed(1)}</span>
-      </div>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
-// ── Chart 4: Language × time witness matrix ──────────────────────────────────
-
-function WitnessMatrix({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  const buckets = [-48, -36, -24, -12, 0, 12, 24, 36]
-  const getBucket = (h: number) => Math.max(-48, Math.min(36, Math.floor(h / 12) * 12))
-  const languages = [...new Set(results.map(r => r.language))].sort()
-  if (languages.length === 0) return null
-
-  const matrix: Record<string, Record<number, number>> = {}
-  for (const lang of languages) {
-    matrix[lang] = {}
-    for (const b of buckets) matrix[lang][b] = 0
-  }
-  for (const r of results) {
-    const b = getBucket(r.hoursAfterSource)
-    if (matrix[r.language]) matrix[r.language][b]++
-  }
-  const maxCount = Math.max(...languages.flatMap(l => buckets.map(b => matrix[l][b])), 1)
-
-  const bucketLabel = (b: number) => b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}h`
-  const bucketRange = (b: number) => `${bucketLabel(b)} → ${bucketLabel(b + 12)}`
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Witness spread" sub="Independent footage across language communities and time windows. Broader spread = broader independent witnessing." />
-      {/* column headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '80px repeat(8, 1fr)', gap: '3px', marginBottom: '4px' }}>
-        <div />
-        {buckets.map(b => (
-          <div key={b} style={{ fontFamily: MONO, fontSize: '10px', color: b === 0 ? '#c8472a' : '#888680', textAlign: 'center', fontWeight: b === 0 ? '600' : '400' }}>
-            {b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}`}
-          </div>
-        ))}
-      </div>
-      {/* rows */}
-      {languages.map(lang => (
-        <div key={lang} style={{ display: 'grid', gridTemplateColumns: '80px repeat(8, 1fr)', gap: '3px', marginBottom: '3px' }}>
-          <div style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', textTransform: 'uppercase', display: 'flex', alignItems: 'center' }}>{lang}</div>
-          {buckets.map(b => {
-            const count = matrix[lang][b]
-            const intensity = count / maxCount
-            return (
-              <div
-                key={b}
-                style={{
-                  height: `${Math.max(44, Math.floor(160 / Math.max(languages.length, 1)))}px`,
-                  background: count > 0 ? `rgba(26,107,74,${0.12 + intensity * 0.88})` : '#f7f4ef',
-                  border: b === 0 ? '1px solid rgba(200,71,42,0.3)' : '1px solid transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: count > 0 ? 'default' : 'default',
-                  transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => count > 0 && show(e, [
-                  `${lang.toUpperCase()} · ${bucketRange(b)}`,
-                  `${count} source${count > 1 ? 's' : ''}`,
-                ])}
-                onMouseMove={move}
-                onMouseLeave={hide}
-              >
-                {count > 0 && (
-                  <span style={{ fontFamily: MONO, fontSize: '11px', fontWeight: '600', color: intensity > 0.5 ? 'white' : '#1a6b4a' }}>{count}</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ))}
-      <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '10px', textAlign: 'right' }}>
-        each column = 12h window · 0 = source video upload time
-      </div>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
-// ── Chart 5: Upload velocity histogram ───────────────────────────────────────
-
-function VelocityHistogram({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  const W = 620, H = 160, pL = 36, pR = 16, pT = 16, pB = 40
-  const plotW = W - pL - pR, plotH = H - pT - pB
-  const bucketDefs = [-48, -36, -24, -12, 0, 12, 24, 36]
-  const getBucket = (h: number) => Math.floor(Math.max(-48, Math.min(36, h)) / 12) * 12
-
-  const allTypes = [...new Set(results.map(r => r.sourceType))]
-  const data = bucketDefs.map(b => {
-    const byType: Record<string, number> = {}
-    for (const t of allTypes) byType[t] = results.filter(r => getBucket(r.hoursAfterSource) === b && r.sourceType === t).length
-    const total = Object.values(byType).reduce((s, v) => s + v, 0)
-    return { b, byType, total }
-  })
-  const maxTotal = Math.max(...data.map(d => d.total), 1)
-  const slotW = plotW / bucketDefs.length
-  const barW = slotW - 6
-  const xCenter = (i: number) => pL + (i + 0.5) * slotW
-  const yH = (count: number) => (count / maxTotal) * plotH
-  const yTicks = Array.from({ length: Math.min(maxTotal, 4) }, (_, i) => i + 1)
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Upload velocity" sub="Footage sources appearing per 12-hour window. A sharp spike before the source line may indicate coordinated activity." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
-        {yTicks.map(tick => (
-          <line key={tick} x1={pL} y1={H - pB - yH(tick)} x2={W - pR} y2={H - pB - yH(tick)} stroke="#edeae3" strokeWidth="0.5" strokeDasharray="3,3" />
-        ))}
-        <line x1={xCenter(4)} y1={pT} x2={xCenter(4)} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" opacity="0.7" />
-        {data.map((d, i) => {
-          const cx = xCenter(i)
-          const x = cx - barW / 2
-          let yOffset = H - pB
-          return (
-            <g key={d.b} style={{ cursor: d.total > 0 ? 'pointer' : 'default' }}
-               onMouseEnter={e => d.total > 0 && show(e, [
-                 `${d.b >= 0 ? '+' : ''}${d.b}h → ${d.b >= 0 ? '+' : ''}${d.b + 12}h`,
-                 `${d.total} source${d.total !== 1 ? 's' : ''}`,
-                 ...allTypes.filter(t => (d.byType[t] ?? 0) > 0).map(t => `${SOURCE_LABELS[t] ?? t}: ${d.byType[t]}`),
-               ])}
-               onMouseMove={move} onMouseLeave={hide}
-            >
-              {allTypes.map(t => {
-                const count = d.byType[t] ?? 0
-                if (count === 0) return null
-                const h = yH(count)
-                yOffset -= h
-                return <rect key={t} x={x} y={yOffset} width={barW} height={h} fill={SOURCE_COLORS[t] ?? '#888680'} />
-              })}
-            </g>
-          )
-        })}
-        {bucketDefs.map((b, i) => (
-          <text key={b} x={xCenter(i)} y={H - pB + 16} textAnchor="middle" fontSize="10" fill={b === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
-            {b === 0 ? '0' : `${b > 0 ? '+' : ''}${b}`}
-          </text>
-        ))}
-        {yTicks.map(tick => (
-          <text key={tick} x={pL - 6} y={H - pB - yH(tick) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{tick}</text>
-        ))}
-      </svg>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
-// ── Chart 6: Platform spread ──────────────────────────────────────────────────
-
-function PlatformBreakdown({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  const articleTypes = new Set(['agency','major','independent','unverified'])
-  const platforms = [
-    { key: 'youtube', label: 'YouTube', barColor: '#c8472a' },
-    { key: 'tiktok', label: 'TikTok', barColor: '#0f0f0e' },
-    { key: 'instagram', label: 'Instagram', barColor: '#9b59b6' },
-    { key: 'news', label: 'News outlets', barColor: '#1a4a8a' },
-  ]
-
-  const data = platforms.map(p => {
-    const items = p.key === 'news'
-      ? results.filter(r => articleTypes.has(r.sourceType))
-      : results.filter(r => !articleTypes.has(r.sourceType) && (r.platform ?? 'youtube') === p.key)
-    const score = items.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
-    const breakdown = [...new Set(items.map(r => r.sourceType))]
-      .map(t => `${SOURCE_LABELS[t] ?? t}: ${items.filter(r => r.sourceType === t).length}`)
-    return { ...p, items, score, breakdown }
-  }).filter(p => p.items.length > 0)
-
-  if (data.length <= 1) return null
-
-  const maxScore = Math.max(...data.map(d => d.score), 0.1)
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Platform spread" sub="Finding the same scene independently on multiple platforms is the strongest possible corroboration signal." />
-      {data.map(p => (
-        <div key={p.key} style={{ display: 'grid', gridTemplateColumns: '96px 1fr 56px', gap: '16px', alignItems: 'center', marginBottom: '14px' }}>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', fontWeight: '600', textAlign: 'right' }}>{p.label}</span>
-          <div style={{ height: '22px', background: '#f7f4ef', position: 'relative', overflow: 'hidden', cursor: 'default' }}
-               onMouseEnter={e => show(e, [
-                 p.label,
-                 `${p.items.length} source${p.items.length !== 1 ? 's' : ''} · score ${p.score.toFixed(1)}`,
-                 ...p.breakdown,
-               ])}
-               onMouseMove={move} onMouseLeave={hide}
-          >
-            <div style={{ height: '100%', width: `${(p.score / maxScore) * 100}%`, background: p.barColor, transition: 'width 0.6s ease' }} />
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{p.score.toFixed(1)}pts</span>
-        </div>
-      ))}
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
-// ── Chart A: Source contribution breakdown ────────────────────────────────────
-
-const SOURCE_TYPE_ORDER = ['agency','major','independent','secondary','raw','aggregated','unverified']
-const SOURCE_TYPE_COLORS: Record<string,string> = {
-  agency:'#1a6b4a', major:'#2d5a8e', independent:'#6b5a2d', secondary:'#555452',
-  raw:'#8e4a2d', aggregated:'#888680', unverified:'#c8c8c4',
-}
-
-function SourceContribution({ results }: { results: any[] }) {
-  const groups = SOURCE_TYPE_ORDER.map(t => {
-    const items = results.filter(r => r.sourceType === t)
-    const pts = items.reduce((s, r) => s + (SOURCE_WEIGHTS[t] ?? 1), 0)
-    return { type: t, count: items.length, pts }
-  }).filter(g => g.count > 0)
-
-  if (groups.length === 0) return null
-  const maxPts = Math.max(...groups.map(g => g.pts), 0.1)
-
-  return (
-    <div>
-      <ChartHeader title="Source contribution" sub="Points contributed to raw score by source type before any penalties." />
-      {groups.map(g => (
-        <div key={g.type} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 52px', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>
-            {SOURCE_LABELS[g.type] ?? g.type}
-          </span>
-          <div style={{ height: '20px', background: '#f0ede6', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(g.pts / maxPts) * 100}%`, background: SOURCE_TYPE_COLORS[g.type] ?? '#888', transition: 'width 0.6s ease' }} />
-            <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: '9px', color: '#f7f4ef', mixBlendMode: 'difference' }}>
-              {g.count} source{g.count !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680' }}>{g.pts.toFixed(1)}pts</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Chart B: Score waterfall ──────────────────────────────────────────────────
 
 function ScoreWaterfall({ results, aiScores, corroborationScore }: {
   results: any[]; aiScores: { outrage: number; simplicity: number; credibility: number }; corroborationScore: number
 }) {
-  // Recompute raw (no outrage, no gate) and after-outrage scores client-side
   const rawScore = Math.min(results.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0), 10)
   const outrMult = aiScores.outrage >= 8 ? 0.1 : aiScores.outrage >= 6 ? 0.4 : aiScores.outrage >= 4 ? 0.75 : 1.0
   const afterOutrage = Math.min(rawScore * outrMult, 10)
@@ -591,62 +311,27 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
     { label: 'Final score', value: final, color: '#0f0f0e', desc: 'Capped at 10' },
   ]
   const max = Math.max(...steps.map(s => s.value), 0.1)
+  const W = 500, barL = 144, barR = 432, barW = barR - barL, rowH = 48, pT = 8, H = pT + steps.length * rowH
 
   return (
     <div>
       <ChartHeader title="Score waterfall" sub="How the final score is constructed — each step shows penalties applied." />
-      {steps.map((s, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 48px', gap: '12px', alignItems: 'center', marginBottom: '14px' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
-            <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginTop: '2px' }}>{s.desc}</div>
-          </div>
-          <div style={{ height: '22px', background: '#f0ede6', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(s.value / max) * 100}%`, background: s.color, transition: 'width 0.7s ease', opacity: i === steps.length - 1 ? 1 : 0.7 }} />
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: '12px', fontWeight: 700, color: s.color }}>{s.value.toFixed(1)}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Chart C: Language coverage ────────────────────────────────────────────────
-
-const LANG_FLAGS: Record<string,string> = {
-  en:'🇬🇧', it:'🇮🇹', fr:'🇫🇷', de:'🇩🇪', es:'🇪🇸', pt:'🇧🇷',
-  ar:'🇸🇦', ru:'🇷🇺', zh:'🇨🇳', ja:'🇯🇵', ko:'🇰🇷', nl:'🇳🇱',
-  pl:'🇵🇱', tr:'🇹🇷', uk:'🇺🇦', undetected:'🌐',
-}
-const LANG_NAMES: Record<string,string> = {
-  en:'English', it:'Italian', fr:'French', de:'German', es:'Spanish', pt:'Portuguese',
-  ar:'Arabic', ru:'Russian', zh:'Chinese', ja:'Japanese', ko:'Korean', nl:'Dutch',
-  pl:'Polish', tr:'Turkish', uk:'Ukrainian', undetected:'Unknown',
-}
-
-function LanguageCoverage({ results }: { results: any[] }) {
-  const counts: Record<string,number> = {}
-  for (const r of results) {
-    const l = r.language ?? 'undetected'
-    counts[l] = (counts[l] ?? 0) + 1
-  }
-  const langs = Object.entries(counts).sort((a, b) => b[1] - a[1])
-  if (langs.length === 0) return null
-  const max = langs[0][1]
-
-  return (
-    <div>
-      <ChartHeader title="Language coverage" sub="Stories independently verified in multiple languages carry stronger corroboration weight." />
-      {langs.map(([lang, count]) => (
-        <div key={lang} style={{ display: 'grid', gridTemplateColumns: '32px 90px 1fr 28px', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-          <span style={{ fontSize: '16px' }}>{LANG_FLAGS[lang] ?? '🌐'}</span>
-          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{LANG_NAMES[lang] ?? lang}</span>
-          <div style={{ height: '16px', background: '#f0ede6', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(count / max) * 100}%`, background: '#2d5a8e', transition: 'width 0.6s ease' }} />
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#888680', textAlign: 'right' }}>{count}</span>
-        </div>
-      ))}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {steps.map((s, i) => {
+          const y = pT + i * rowH
+          const bw = (s.value / max) * barW
+          const isFinal = i === steps.length - 1
+          return (
+            <g key={i}>
+              <text x={barL - 8} y={y + 13} textAnchor="end" fontSize="10" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</text>
+              <text x={barL - 8} y={y + 25} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{s.desc}</text>
+              <rect x={barL} y={y} width={barW} height={22} fill="#f0ede6" />
+              <rect x={barL} y={y} width={bw} height={22} fill={s.color} opacity={isFinal ? 1 : 0.7} />
+              <text x={barR + 10} y={y + 15} textAnchor="start" fontSize="12" fontWeight="700" fill={s.color} fontFamily={MONO}>{s.value.toFixed(1)}</text>
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }
@@ -657,202 +342,59 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
   results: any[]; aiScores: { outrage: number; simplicity: number; credibility: number };
   unverifiedRatio: number; aiAnalysisAvailable: boolean; corroborationScore: number
 }) {
-  const flags: { icon: string; label: string; detail: string; severity: 'high'|'medium'|'low' }[] = []
+  const flags: { label: string; detail: string; severity: 'high'|'medium'|'low' }[] = []
 
-  if (aiScores.outrage >= 8) flags.push({ icon: '🔴', label: 'Extreme outrage signal', detail: `Outrage score ${aiScores.outrage}/10 — content is highly emotionally manipulative`, severity: 'high' })
-  else if (aiScores.outrage >= 6) flags.push({ icon: '🟠', label: 'Elevated outrage', detail: `Outrage score ${aiScores.outrage}/10 — emotional framing may distort the story`, severity: 'medium' })
-
-  if (aiScores.credibility <= 2) flags.push({ icon: '🔴', label: 'Claim likely false', detail: `Credibility ${aiScores.credibility}/10 — core facts appear fabricated or misrepresented`, severity: 'high' })
-  else if (aiScores.credibility <= 4) flags.push({ icon: '🟠', label: 'Low credibility', detail: `Credibility ${aiScores.credibility}/10 — claim is poorly supported or misleadingly framed`, severity: 'medium' })
-
-  if (unverifiedRatio > 0.7) flags.push({ icon: '🟠', label: 'Mostly unverified sources', detail: `${Math.round(unverifiedRatio * 100)}% of sources are from unknown/unverified channels`, severity: 'medium' })
-
-  const noAgency = !results.some(r => r.sourceType === 'agency')
-  if (noAgency && results.length > 0) flags.push({ icon: '🟡', label: 'No agency coverage', detail: 'No Reuters, AP, or AFP source found — not independently confirmed by wire services', severity: 'low' })
-
+  if (aiScores.outrage >= 8) flags.push({ label: 'Extreme outrage signal', detail: `Outrage score ${aiScores.outrage}/10 — content is highly emotionally manipulative`, severity: 'high' })
+  else if (aiScores.outrage >= 6) flags.push({ label: 'Elevated outrage', detail: `Outrage score ${aiScores.outrage}/10 — emotional framing may distort the story`, severity: 'medium' })
+  if (aiScores.credibility <= 2) flags.push({ label: 'Claim likely false', detail: `Credibility ${aiScores.credibility}/10 — core facts appear fabricated or misrepresented`, severity: 'high' })
+  else if (aiScores.credibility <= 4) flags.push({ label: 'Low credibility', detail: `Credibility ${aiScores.credibility}/10 — claim is poorly supported or misleadingly framed`, severity: 'medium' })
+  if (unverifiedRatio > 0.7) flags.push({ label: 'Mostly unverified sources', detail: `${Math.round(unverifiedRatio * 100)}% of sources are from unknown/unverified channels`, severity: 'medium' })
+  if (!results.some(r => r.sourceType === 'agency') && results.length > 0) flags.push({ label: 'No agency coverage', detail: 'No Reuters, AP, or AFP source found — not independently confirmed by wire services', severity: 'low' })
   const langs = new Set(results.map(r => r.language ?? 'undetected').filter(l => l !== 'undetected'))
-  if (langs.size === 1 && results.length >= 4) flags.push({ icon: '🟡', label: 'Single language only', detail: 'All sources in one language — no cross-border corroboration detected', severity: 'low' })
+  if (langs.size === 1 && results.length >= 4) flags.push({ label: 'Single language only', detail: 'All sources in one language — no cross-border corroboration detected', severity: 'low' })
+  if (!aiAnalysisAvailable) flags.push({ label: 'AI analysis unavailable', detail: 'Scores are estimated defaults — Claude analysis did not complete', severity: 'low' })
+  if (aiScores.simplicity <= 3) flags.push({ label: 'Contradictory narratives', detail: `Consistency score ${aiScores.simplicity}/10 — sources tell conflicting stories`, severity: 'medium' })
+  flags.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
 
-  if (!aiAnalysisAvailable) flags.push({ icon: '🟡', label: 'AI analysis unavailable', detail: 'Scores are estimated defaults — Claude analysis did not complete', severity: 'low' })
+  const severityColor = (s: string) => s === 'high' ? '#c8472a' : s === 'medium' ? '#c8822a' : '#888680'
+  const severityBg = (s: string) => s === 'high' ? 'rgba(200,71,42,0.08)' : s === 'medium' ? 'rgba(200,130,42,0.08)' : 'rgba(0,0,0,0.03)'
+  const truncate = (t: string, n: number) => t.length > n ? t.slice(0, n - 1) + '…' : t
 
-  if (aiScores.simplicity <= 3) flags.push({ icon: '🟠', label: 'Contradictory narratives', detail: `Consistency score ${aiScores.simplicity}/10 — sources tell conflicting stories`, severity: 'medium' })
+  const W = 500, pL = 12, rowH = 56, gap = 6, pT = 8
+  const noFlagsH = pT + 56
 
   if (flags.length === 0) {
     return (
       <div>
         <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '16px', background: 'rgba(26,107,74,0.08)', border: '1px solid #1a6b4a' }}>
-          <span style={{ fontSize: '18px' }}>✓</span>
-          <span style={{ fontFamily: SANS, fontSize: '13px', color: '#1a6b4a' }}>No suspicious signals detected</span>
-        </div>
+        <svg viewBox={`0 0 ${W} ${noFlagsH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+          <rect x={pL} y={pT} width={W - pL * 2} height={40} fill="rgba(26,107,74,0.08)" stroke="#1a6b4a" strokeWidth="1" />
+          <circle cx={pL + 20} cy={pT + 20} r={5} fill="#1a6b4a" />
+          <text x={pL + 36} y={pT + 24} fontSize="12" fill="#1a6b4a" fontFamily={SANS}>No suspicious signals detected</text>
+        </svg>
       </div>
     )
   }
 
-  const severityOrder = { high: 0, medium: 1, low: 2 }
-  flags.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
-
+  const H = pT + flags.length * (rowH + gap)
   return (
     <div>
       <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
-      {flags.map((f, i) => (
-        <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '10px 12px', marginBottom: '8px', background: f.severity === 'high' ? 'rgba(200,71,42,0.08)' : f.severity === 'medium' ? 'rgba(200,130,42,0.08)' : 'rgba(0,0,0,0.03)', border: `1px solid ${f.severity === 'high' ? '#c8472a' : f.severity === 'medium' ? '#c8822a' : '#d4d0c8'}` }}>
-          <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>{f.icon}</span>
-          <div>
-            <div style={{ fontFamily: MONO, fontSize: '11px', fontWeight: '600', color: '#0f0f0e', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</div>
-            <div style={{ fontFamily: SANS, fontSize: '12px', color: '#555452', lineHeight: 1.4 }}>{f.detail}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Chart E: Credibility profile ──────────────────────────────────────────────
-
-function CredibilityProfile({ aiScores }: { aiScores: { outrage: number; simplicity: number; credibility: number } }) {
-  const dims = [
-    {
-      key: 'credibility', label: 'Factual accuracy', value: aiScores.credibility,
-      desc: (v: number) => v >= 8 ? 'Confirmed by credible sources' : v >= 6 ? 'Likely accurate' : v >= 4 ? 'Partially true / misleading' : 'Likely false or fabricated',
-      color: (v: number) => v >= 7 ? '#1a6b4a' : v >= 4 ? '#888680' : '#c8472a',
-      invert: false,
-    },
-    {
-      key: 'outrage', label: 'Emotional manipulation', value: aiScores.outrage,
-      desc: (v: number) => v >= 8 ? 'Extreme outrage-bait' : v >= 6 ? 'Elevated emotional framing' : v >= 4 ? 'Moderate tone' : 'Neutral / factual',
-      color: (v: number) => v >= 7 ? '#c8472a' : v >= 4 ? '#c8822a' : '#1a6b4a',
-      invert: true, // high = bad
-    },
-    {
-      key: 'simplicity', label: 'Narrative consistency', value: aiScores.simplicity,
-      desc: (v: number) => v >= 8 ? 'All sources agree' : v >= 5 ? 'Mostly consistent' : v >= 3 ? 'Conflicting accounts' : 'Highly contradictory',
-      color: (v: number) => v >= 7 ? '#1a6b4a' : v >= 4 ? '#888680' : '#c8472a',
-      invert: false,
-    },
-  ]
-
-  return (
-    <div>
-      <ChartHeader title="Credibility profile" sub="AI-assessed dimensions of the claim's reliability." />
-      {dims.map(d => (
-        <div key={d.key} style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{d.label}</span>
-            <span style={{ fontFamily: MONO, fontSize: '18px', fontWeight: 700, color: d.color(d.value) }}>{d.value}<span style={{ fontSize: '10px', fontWeight: 400, color: '#888680' }}>/10</span></span>
-          </div>
-          <div style={{ height: '8px', background: '#f0ede6', marginBottom: '5px', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${d.value * 10}%`, background: d.color(d.value), transition: 'width 0.7s ease' }} />
-          </div>
-          <span style={{ fontFamily: SANS, fontSize: '11px', color: '#888680' }}>{d.desc(d.value)}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Chart 7: Reach × timing scatter ──────────────────────────────────────────
-
-function ReachBubbles({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  const withViews = results.filter(r => r.viewCount > 0)
-  if (withViews.length === 0) return null
-
-  const W = 620, H = 160, pL = 56, pR = 24, pT = 16, pB = 40
-  const plotW = W - pL - pR, plotH = H - pT - pB
-  const xMin = -48, xMax = 48
-  const maxViews = Math.max(...withViews.map(r => r.viewCount))
-  const xS = (h: number) => pL + ((Math.max(xMin, Math.min(xMax, h)) - xMin) / (xMax - xMin)) * plotW
-  const yS = (v: number) => H - pB - (Math.log(v + 1) / Math.log(maxViews + 1)) * plotH
-  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n)
-  const ticks = [-48, -24, 0, 24, 48]
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Reach × timing" sub="View counts of corroborating sources plotted against upload time. High-reach raw footage before the source line is the strongest signal." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
-        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
-        {ticks.map(t => (
-          <line key={t} x1={xS(t)} y1={pT} x2={xS(t)} y2={H - pB} stroke={t === 0 ? 'rgba(200,71,42,0.15)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
-        ))}
-        <line x1={xS(0)} y1={pT} x2={xS(0)} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" />
-        {withViews.map((r, i) => (
-          <circle key={i}
-            cx={xS(r.hoursAfterSource)} cy={yS(r.viewCount)}
-            r={(SOURCE_WEIGHTS[r.sourceType] ?? 1) * 3 + 2}
-            fill={SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'}
-            opacity={0.82}
-            stroke="#f7f4ef" strokeWidth="1.5"
-            style={{ cursor: 'pointer' }}
-            onMouseEnter={e => show(e, [
-              r.channel,
-              `${fmt(r.viewCount)} views`,
-              `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]}`,
-              `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source`,
-            ])}
-            onMouseMove={move} onMouseLeave={hide}
-          />
-        ))}
-        {ticks.map(t => (
-          <text key={t} x={xS(t)} y={H - pB + 16} textAnchor="middle" fontSize="10" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
-            {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t}h`}
-          </text>
-        ))}
-        <text x={pL - 6} y={pT + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>{fmt(maxViews)}</text>
-        <text x={pL - 6} y={H - pB + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>0</text>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {flags.map((f, i) => {
+          const y = pT + i * (rowH + gap)
+          const col = severityColor(f.severity)
+          const line2 = truncate(f.detail, 68)
+          return (
+            <g key={i}>
+              <rect x={pL} y={y} width={W - pL * 2} height={rowH} fill={severityBg(f.severity)} stroke={col} strokeWidth="0.75" />
+              <circle cx={pL + 16} cy={y + 16} r={4} fill={col} />
+              <text x={pL + 28} y={y + 19} fontSize="10" fontWeight="700" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</text>
+              <text x={pL + 28} y={y + 36} fontSize="11" fill="#555452" fontFamily={SANS}>{line2}</text>
+            </g>
+          )
+        })}
       </svg>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
-// ── Chart 8: Keyword consensus ────────────────────────────────────────────────
-
-function KeywordFrequency({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  if (results.length === 0) return null
-
-  const freq: Record<string, number> = {}
-  for (const r of results) {
-    const words = r.title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/)
-    for (const w of words) {
-      if (w.length < 3) continue
-      if (/^\p{N}+$/u.test(w)) continue  // skip pure numbers (years, ids…)
-      const lower = w.normalize('NFC').toLowerCase()
-      if (STOP_WORDS.has(lower)) continue
-      freq[lower] = (freq[lower] ?? 0) + 1
-    }
-  }
-
-  const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8)
-  if (top.length === 0) return null
-
-  const maxFreq = top[0][1]
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Keyword consensus" sub="Most frequent words across corroborating titles. High overlap means independent sources describe the same event in similar terms." />
-      {top.map(([word, count], i) => (
-        <div key={word} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 32px', gap: '16px', alignItems: 'center', marginBottom: '10px', cursor: 'default' }}
-             onMouseEnter={e => show(e, [word, `${count} title${count !== 1 ? 's' : ''}`, `${Math.round((count / results.length) * 100)}% of sources`])}
-             onMouseMove={move} onMouseLeave={hide}
-        >
-          <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{word}</span>
-          <div style={{ height: '16px', background: '#f7f4ef', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(count / maxFreq) * 100}%`, background: i === 0 ? '#0f0f0e' : '#3a3a38', opacity: Math.max(1 - i * 0.07, 0.35), transition: 'width 0.5s ease' }} />
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680' }}>{count}×</span>
-        </div>
-      ))}
-      <ChartTooltip tip={tip} />
     </div>
   )
 }
@@ -1049,83 +591,6 @@ function VisualMatchChart({ results }: { results: any[] }) {
   )
 }
 
-// ── Chart 11: Title independence matrix ───────────────────────────────────────
-
-function OverlapMatrix({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => setTip(null)
-
-  if (results.length < 2 || results.length > 12) return null
-
-  const wordSet = (r: any): Set<string> => new Set(
-    r.title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/)
-      .filter((w: string) => w.length >= 3 && !/^\p{N}+$/u.test(w) && !STOP_WORDS.has(w.toLowerCase()))
-      .map((w: string) => w.toLowerCase())
-  )
-  const sets = results.map(wordSet)
-  const jaccard = (a: Set<string>, b: Set<string>) => {
-    const inter = [...a].filter(w => b.has(w)).length
-    const union = new Set([...a, ...b]).size
-    return union === 0 ? 0 : inter / union
-  }
-
-  const n = results.length
-  const cell = Math.min(Math.floor(260 / n), 30)
-  const lw = 56
-
-  return (
-    <div style={{}}>
-      <ChartHeader title="Title independence" sub="Word overlap (Jaccard %) between titles. Empty = no shared keywords = independent sources." />
-      <div style={{ overflowX: 'auto' }}>
-        {/* Column index headers */}
-        <div style={{ display: 'flex', paddingLeft: `${lw}px`, marginBottom: '3px' }}>
-          {results.map((_, i) => (
-            <div key={i} style={{ width: cell, flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'center' }}>#{i + 1}</div>
-          ))}
-        </div>
-        {results.map((rA, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-            <div style={{ width: `${lw}px`, flexShrink: 0, fontFamily: MONO, fontSize: '9px', color: '#888680', textAlign: 'right', paddingRight: '6px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-              #{i + 1}
-            </div>
-            {results.map((rB, j) => {
-              const isDiag = i === j
-              const sim = isDiag ? 1 : jaccard(sets[i], sets[j])
-              const simPct = Math.round(sim * 100)
-              const overlap = isDiag ? 'same source' : sim < 0.05 ? 'no shared keywords' : sim < 0.25 ? 'mostly independent' : sim < 0.5 ? 'some shared language' : 'high overlap — may reference same source'
-              return (
-                <div key={j}
-                  style={{
-                    width: cell, height: cell, flexShrink: 0, marginRight: 2,
-                    background: isDiag ? '#0f0f0e' : sim < 0.05 ? '#f7f4ef' : `rgba(26,107,74,${0.12 + sim * 0.88})`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  }}
-                  onMouseEnter={e => show(e, [
-                    isDiag ? rA.channel : `#${i+1} × #${j+1}`,
-                    isDiag ? `${SOURCE_LABELS[rA.sourceType as keyof typeof SOURCE_LABELS]}` : `${simPct}% overlap`,
-                    overlap,
-                  ])}
-                  onMouseMove={move} onMouseLeave={hide}
-                >
-                  {!isDiag && sim >= 0.05 && (
-                    <span style={{ fontFamily: MONO, fontSize: '9px', color: sim > 0.4 ? 'white' : '#1a6b4a', fontWeight: '600' }}>{simPct}</span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </div>
-      <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '10px', textAlign: 'right' }}>
-        numbers = keyword overlap % · black diagonal = self · empty = independent
-      </div>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
-
 // ── Who reported this ─────────────────────────────────────────────────────────
 
 const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 2, unverified: 3, raw: 4, secondary: 5, aggregated: 6 }
@@ -1134,78 +599,76 @@ const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 
 const debunkRe = /bufala|bufale|debunked?|fact.?check|hoax|fake.news|smentis|disinformation|misinformation|è.falso|it.s.fake|it.s.false|not.true|untrue/i
 const isDebunker = (title: string) => debunkRe.test(title)
 
-function ResultsTable({ rows, debunked, darkBg }: { rows: any[]; debunked: boolean; darkBg: boolean }) {
+// SVG table for WhoReportedIt
+function SvgResultsTable({ rows, darkBg }: { rows: any[]; darkBg: boolean }) {
   const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
+  const truncate = (t: string, n: number) => t.length > n ? t.slice(0, n - 1) + '…' : t
+
+  const W = 900, rowH = 44, headerH = 28, pL = 0
+  // Col x positions
+  const cDot = 8, cChannel = 24, cType = 134, cTitle = 214, cViews = 734, cLink = 820
+  const H = headerH + rows.length * rowH
+  const textColor = darkBg ? '#f7f4ef' : '#0f0f0e'
+  const subColor = darkBg ? '#c8c8c4' : '#3a3a38'
+  const lineColor = darkBg ? 'rgba(255,255,255,0.08)' : '#f0ede6'
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '16px 110px 1fr auto auto', gap: '0', borderTop: '1px solid #edeae3' }}>
-      {['', 'Source', 'Headline', 'Views', ''].map((h, i) => (
-        <div key={i} style={{ fontFamily: MONO, fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#888680', padding: '8px 10px 8px 0', borderBottom: '2px solid #0f0f0e' }}>{h}</div>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {/* Header */}
+      <line x1={pL} y1={headerH} x2={W} y2={headerH} stroke={darkBg ? '#555452' : '#0f0f0e'} strokeWidth="1.5" />
+      {[['SOURCE', cChannel], ['TYPE', cType], ['HEADLINE', cTitle], ['VIEWS', cViews]].map(([label, x]) => (
+        <text key={label as string} x={x as number} y={headerH - 8} fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label as string}</text>
       ))}
+      {/* Rows */}
       {rows.map((r, i) => {
         const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
         const isArticle = ['agency','major','independent','unverified'].includes(r.sourceType)
+        const y = headerH + i * rowH
+        const midY = y + rowH / 2
         return (
-          <Fragment key={i}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0ede6', paddingTop: '12px', paddingBottom: '12px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-            </div>
-            <div style={{ padding: '12px 10px 12px 0', borderBottom: '1px solid #f0ede6' }}>
-              <div style={{ fontFamily: MONO, fontSize: '10px', color: darkBg ? '#f7f4ef' : '#0f0f0e', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100px' }}>{r.channel}</div>
-              <div style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</div>
-            </div>
-            <div style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6' }}>
-              <div style={{ fontFamily: SANS, fontSize: '12px', color: darkBg ? '#c8c8c4' : '#3a3a38', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</div>
-            </div>
-            <div style={{ padding: '12px 16px 12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', whiteSpace: 'nowrap' }}>{fmtViews(r.viewCount ?? 0)}</span>
-            </div>
-            <div style={{ padding: '12px 0', borderBottom: '1px solid #f0ede6', display: 'flex', alignItems: 'center' }}>
-              <a href={r.url} target="_blank" rel="noopener noreferrer"
-                 style={{ fontFamily: MONO, fontSize: '9px', color, textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${color}`, paddingBottom: '1px', whiteSpace: 'nowrap' }}>
-                {isArticle ? 'Read →' : 'Watch →'}
-              </a>
-            </div>
-          </Fragment>
+          <g key={i}>
+            <line x1={pL} y1={y + rowH} x2={W} y2={y + rowH} stroke={lineColor} strokeWidth="0.5" />
+            <circle cx={cDot + 4} cy={midY} r={4} fill={color} />
+            <text x={cChannel} y={midY - 4} fontSize="10" fill={textColor} fontFamily={MONO}>{truncate(r.channel, 14)}</text>
+            <text x={cType} y={midY - 4} fontSize="9" fill={color} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{truncate(SOURCE_LABELS[r.sourceType] ?? r.sourceType, 10)}</text>
+            <text x={cTitle} y={midY - 4} fontSize="12" fill={subColor} fontFamily={SANS}>{truncate(r.title, 52)}</text>
+            <text x={cViews} y={midY - 4} fontSize="10" fill="#888680" fontFamily={MONO}>{fmtViews(r.viewCount ?? 0)}</text>
+            <text x={cLink} y={midY - 4} fontSize="9" fill={color} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>{isArticle ? 'Read →' : 'Watch →'}</text>
+          </g>
         )
       })}
-    </div>
+    </svg>
   )
 }
 
 function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debunked: boolean; suspicious: boolean }) {
+  const mobile = useMobile()
   if (results.length === 0) return null
 
   const sorted = [...results].sort((a, b) => (SOURCE_RANK[a.sourceType] ?? 9) - (SOURCE_RANK[b.sourceType] ?? 9))
-
-  // Separate sources that spread the claim from those that debunked it
-  const spreadRows   = sorted.filter(r => !isDebunker(r.title))
-  const debunkRows   = sorted.filter(r =>  isDebunker(r.title))
+  const spreadRows = sorted.filter(r => !isDebunker(r.title))
+  const debunkRows = sorted.filter(r =>  isDebunker(r.title))
 
   const title = debunked ? 'Who fell for it' : suspicious ? 'Who spread this claim' : 'Who ran the story'
   const sub   = debunked
     ? 'These outlets amplified the false claim. Debunking sources are listed separately below.'
-    : suspicious
-    ? ''
+    : suspicious ? ''
     : 'Sources that covered this story. Publishing is a choice — sorted by how much their verification process is worth trusting.'
 
+  const px = mobile ? '0 16px' : undefined
   return (
     <div>
-      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: debunked ? '#c8472a' : '#0f0f0e', marginBottom: '6px' }}>{title}</p>
-      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: debunked ? '12px' : '24px' }}>{sub}</p>
+      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: debunked ? '#c8472a' : '#0f0f0e', marginBottom: '6px', padding: px }}>{title}</p>
+      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: debunked ? '12px' : '24px', padding: px }}>{sub}</p>
       {debunked && (
-        <div style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8472a', animation: 'pulse 1s ease-in-out infinite' }} />
-          Claim independently debunked by fact-checkers
-        </div>
+        <p style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '20px', padding: px }}>● Claim independently debunked by fact-checkers</p>
       )}
-
-      {spreadRows.length > 0 && <ResultsTable rows={spreadRows} debunked={debunked} darkBg={debunked} />}
-
+      {spreadRows.length > 0 && <SvgResultsTable rows={spreadRows} darkBg={debunked} />}
       {debunkRows.length > 0 && (
         <div style={{ marginTop: spreadRows.length > 0 ? '32px' : '0' }}>
-          <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1a6b4a', marginBottom: '6px' }}>Who debunked it</p>
-          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '16px' }}>These sources investigated and contradicted the claim.</p>
-          <ResultsTable rows={debunkRows} debunked={false} darkBg={debunked} />
+          <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1a6b4a', marginBottom: '6px', padding: px }}>Who debunked it</p>
+          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '16px', padding: px }}>These sources investigated and contradicted the claim.</p>
+          <SvgResultsTable rows={debunkRows} darkBg={debunked} />
         </div>
       )}
     </div>
@@ -1682,12 +1145,6 @@ export default function Home() {
     }
   }
 
-  const hasViews = results.some(r => r.viewCount > 0)
-  const articleTypes = new Set(['agency','major','independent','unverified'])
-  const hasVideos = results.some(r => !articleTypes.has(r.sourceType))
-  const hasArticles = results.some(r => articleTypes.has(r.sourceType))
-  const hasPlatforms = hasVideos && (new Set(results.filter(r => !articleTypes.has(r.sourceType)).map(r => r.platform ?? 'youtube')).size > 1 || hasArticles)
-  const hasOverlap = results.length >= 2 && results.length <= 12
   const hasUploadClock = results.length >= 3
   const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
 
@@ -1695,7 +1152,7 @@ export default function Home() {
   const C = ({ children, span = 6, bg = '#f7f4ef', style, name, noSvg }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string; noSvg?: boolean }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     return (
-      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? 'span 12' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: 'hidden', position: 'relative', ...style }}>
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: 'hidden', position: 'relative', ...style }}>
         {children}
         {name && !noSvg && (
           <button
@@ -1855,46 +1312,25 @@ export default function Home() {
 
           {results.length > 0 ? (
             <MobileCtx.Provider value={isMobile}>
-            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: '1px', background: '#d4d0c8' }}>
+            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: '#d4d0c8' }}>
 
-              {/* Row 1: score buildup + score anatomy */}
-              <C span={8} name="corroboration-buildup"><CorroborationBuildup results={results} /></C>
-              <C span={4} name="score-anatomy"><ScoreAnatomy results={results} /></C>
+              {/* Row 1: buildup | profile | clock */}
+              <C span={hasUploadClock ? 1 : 2} name="corroboration-buildup"><CorroborationBuildup results={results} /></C>
+              <C span={1} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
+              {hasUploadClock && <C span={1} name="upload-clock"><UploadClock results={results} /></C>}
 
-              {/* Row 2: corroboration profile + clock */}
-              <C span={hasUploadClock ? 6 : 12} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
-              {hasUploadClock && <C span={6} name="upload-clock"><UploadClock results={results} /></C>}
+              {/* Row 2: swim lanes | waterfall | red flags */}
+              <C span={1} name="swim-lanes"><SwimLanes results={results} /></C>
+              <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
+              <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
-              {/* Row 2b: language coverage (left) + reach × timing (right, same col as clock) */}
-              {hasViews && <C span={6} name="language-coverage" noSvg><LanguageCoverage results={results} /></C>}
-              {hasViews && <C span={6} name="reach-timing" style={!isMobile && hasUploadClock ? { gridColumn: '7 / span 6' } : undefined}><ReachBubbles results={results} /></C>}
-
-              {/* Row 3: swim lanes + title independence */}
-              <C span={8} name="swim-lanes"><SwimLanes results={results} /></C>
-              <C span={4} name={hasOverlap ? 'overlap-matrix' : 'velocity-histogram'}>{hasOverlap ? <OverlapMatrix results={results} /> : <VelocityHistogram results={results} />}</C>
-
-              {/* Row 4: witness matrix + keyword frequency */}
-              <C span={7} name="witness-matrix"><WitnessMatrix results={results} /></C>
-              <C span={5} name="keyword-frequency"><KeywordFrequency results={results} /></C>
-
-              {/* Row 5: who reported this — full width, always */}
-              <C span={12} name="who-reported-it" noSvg bg={debunked ? '#1a0808' : '#f2efe9'}>
+              {/* Row 3: who reported it — full width */}
+              <C span={3} name="who-reported-it" bg={debunked ? '#1a0808' : '#f2efe9'}>
                 <WhoReportedIt results={results} debunked={debunked} suspicious={corroborationColor === 'suspicious'} />
               </C>
 
-              {/* Row 6 conditional: visual similarity only */}
-              {hasVisualScores && <C span={12} name="visual-match"><VisualMatchChart results={results} /></C>}
-
-              {/* Row 6: platform spread + source contribution */}
-              {hasPlatforms && <C span={6} name="platform-breakdown"><PlatformBreakdown results={results} /></C>}
-              <C span={hasPlatforms ? 6 : 12} name="source-contribution" noSvg><SourceContribution results={results} /></C>
-
-              {/* Row 7: score waterfall — full width */}
-              <C span={12} name="score-waterfall" noSvg><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
-
-              {/* Row 8: red flags + credibility profile */}
-              <C span={6} name="red-flags" noSvg><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
-              <C span={6} name="credibility-profile" noSvg><CredibilityProfile aiScores={aiScores} /></C>
+              {/* Row 4: visual match — full width, conditional */}
+              {hasVisualScores && <C span={3} name="visual-match"><VisualMatchChart results={results} /></C>}
 
             </div>
             </MobileCtx.Provider>
