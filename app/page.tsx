@@ -604,109 +604,258 @@ const SOURCE_RANK: Record<string, number> = { agency: 0, major: 1, independent: 
 const debunkRe = /bufala|bufale|debunked?|fact.?check|hoax|fake.news|smentis|disinformation|misinformation|è.falso|it.s.fake|it.s.false|not.true|untrue/i
 const isDebunker = (title: string) => debunkRe.test(title)
 
-// SVG table for WhoReportedIt
-function SvgResultsTable({ rows, darkBg }: { rows: any[]; darkBg: boolean }) {
-  const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
-  const truncate = (t: string, n: number) => t.length > n ? t.slice(0, n - 1) + '…' : t
+// ── Chart: Geographic spread (world map) ─────────────────────────────────────
 
-  const W = 900, rowH = 44, headerH = 28, pL = 0
-  // Col x positions
-  const cDot = 8, cChannel = 24, cType = 134, cTitle = 214, cViews = 734, cLink = 820
-  const H = headerH + rows.length * rowH
-  const textColor = darkBg ? '#f7f4ef' : '#0f0f0e'
-  const subColor = darkBg ? '#c8c8c4' : '#3a3a38'
-  const lineColor = darkBg ? 'rgba(255,255,255,0.08)' : '#f0ede6'
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {/* Header */}
-      <line x1={pL} y1={headerH} x2={W} y2={headerH} stroke={darkBg ? '#555452' : '#0f0f0e'} strokeWidth="1.5" />
-      {[['SOURCE', cChannel], ['TYPE', cType], ['HEADLINE', cTitle], ['VIEWS', cViews]].map(([label, x]) => (
-        <text key={label as string} x={x as number} y={headerH - 8} fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label as string}</text>
-      ))}
-      {/* Rows */}
-      {rows.map((r, i) => {
-        const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
-        const isArticle = ['agency','major','independent','unverified'].includes(r.sourceType)
-        const y = headerH + i * rowH
-        const midY = y + rowH / 2
-        return (
-          <g key={i}>
-            <line x1={pL} y1={y + rowH} x2={W} y2={y + rowH} stroke={lineColor} strokeWidth="0.5" />
-            <circle cx={cDot + 4} cy={midY} r={4} fill={color} />
-            <text x={cChannel} y={midY - 4} fontSize="10" fill={textColor} fontFamily={MONO}>{truncate(r.channel, 14)}</text>
-            <text x={cType} y={midY - 4} fontSize="9" fill={color} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{truncate(SOURCE_LABELS[r.sourceType] ?? r.sourceType, 10)}</text>
-            <text x={cTitle} y={midY - 4} fontSize="12" fill={subColor} fontFamily={SANS}>{truncate(r.title, 52)}</text>
-            <text x={cViews} y={midY - 4} fontSize="10" fill="#888680" fontFamily={MONO}>{fmtViews(r.viewCount ?? 0)}</text>
-            <text x={cLink} y={midY - 4} fontSize="9" fill={color} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>{isArticle ? 'Read →' : 'Watch →'}</text>
-          </g>
-        )
-      })}
-    </svg>
-  )
+const LANG_GEO: Record<string, [number, number]> = {
+  en: [40, -95], fr: [46, 2], de: [51, 10], es: [40, -3], it: [42, 12],
+  pt: [-14, -51], ru: [61, 105], zh: [35, 105], ja: [36, 138], ko: [36, 128],
+  ar: [25, 45], hi: [20, 77], tr: [39, 35], nl: [52, 5], pl: [52, 20],
+  sv: [60, 18], uk: [49, 32], he: [31, 35], fa: [33, 53], id: [-2, 118],
+  vi: [16, 108], th: [15, 101], ms: [4, 110], ro: [45, 25], cs: [50, 15],
+  hu: [47, 19], el: [38, 22], da: [56, 10], fi: [61, 26], no: [60, 10],
+  bg: [43, 25], hr: [45, 16], sk: [49, 19], sr: [44, 21], lt: [56, 24],
+  lv: [57, 25], et: [59, 25], sl: [46, 15], af: [-28, 25], sw: [-6, 35],
+  am: [9, 38], ur: [30, 70], bn: [23, 90], ta: [12, 80],
 }
 
-function MobileResultsList({ rows, darkBg }: { rows: any[]; darkBg: boolean }) {
-  const isArticle = (r: any) => ['agency','major','independent','unverified'].includes(r.sourceType)
-  const fmtViews = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : ''
-  const textColor = darkBg ? '#f7f4ef' : '#0f0f0e'
-  const subColor  = darkBg ? '#c8c8c4' : '#3a3a38'
-  const lineColor = darkBg ? 'rgba(255,255,255,0.08)' : '#f0ede6'
+const MAP_W = 800, MAP_H = 380
+const toMapXY = (lat: number, lng: number): [number, number] => [
+  Math.round((lng + 180) * MAP_W / 360),
+  Math.round((90 - lat) * MAP_H / 180),
+]
+
+const WORLD_CONTINENTS = [
+  { id: 'na', d: 'M 44 42 L 222 42 L 278 80 L 251 97 L 222 137 L 200 156 L 164 144 L 140 122 L 116 84 Z' },
+  { id: 'sa', d: 'M 238 173 L 284 179 L 322 200 L 304 238 L 282 260 L 249 306 L 238 285 L 231 211 Z' },
+  { id: 'eu', d: 'M 380 110 L 411 40 L 467 63 L 484 74 L 480 112 L 453 112 L 389 114 Z' },
+  { id: 'af', d: 'M 387 116 L 469 125 L 513 167 L 489 211 L 440 262 L 427 226 L 378 177 L 362 158 Z' },
+  { id: 'as', d: 'M 458 108 L 498 158 L 571 173 L 631 188 L 640 169 L 653 144 L 684 110 L 700 84 L 729 42 L 533 42 L 533 95 Z' },
+  { id: 'au', d: 'M 653 243 L 682 220 L 691 215 L 722 222 L 729 270 L 711 270 L 660 262 Z' },
+  { id: 'gl', d: 'M 302 63 L 249 30 L 320 15 L 351 38 Z' },
+]
+
+function GeoSpreadMap({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length === 0) return null
+
+  const langGroups: Record<string, { count: number; views: number; types: string[] }> = {}
+  for (const r of results) {
+    const lang = (r.language ?? 'en').toLowerCase().slice(0, 2)
+    if (!langGroups[lang]) langGroups[lang] = { count: 0, views: 0, types: [] }
+    langGroups[lang].count++
+    langGroups[lang].views += r.viewCount ?? 0
+    langGroups[lang].types.push(r.sourceType)
+  }
+
+  const maxCount = Math.max(...Object.values(langGroups).map(g => g.count), 1)
+  const langCount = Object.keys(langGroups).length
+
   return (
-    <div style={{ padding: '0 16px' }}>
-      {rows.map((r, i) => {
-        const color = SOURCE_COLORS[r.sourceType] ?? '#888680'
-        const views = fmtViews(r.viewCount ?? 0)
-        return (
-          <a key={i} href={r.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none', borderBottom: `1px solid ${lineColor}`, padding: '12px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-              <span style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{SOURCE_LABELS[r.sourceType] ?? r.sourceType}</span>
-              <span style={{ fontFamily: MONO, fontSize: '9px', color: subColor === '#3a3a38' ? '#888680' : '#888680' }}>{r.channel}</span>
-              {views && <span style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', marginLeft: 'auto', flexShrink: 0 }}>{views}</span>}
-            </div>
-            <p style={{ fontFamily: SANS, fontSize: '13px', color: textColor, lineHeight: 1.4, margin: 0 }}>{r.title}</p>
-            <span style={{ fontFamily: MONO, fontSize: '9px', color, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px', display: 'inline-block' }}>{isArticle(r) ? 'Read →' : 'Watch →'}</span>
-          </a>
-        )
-      })}
+    <div>
+      <ChartHeader title="Geographic spread" sub={`Coverage detected in ${langCount} language${langCount !== 1 ? 's' : ''}. Dot size = number of sources. Positions approximated from language.`} />
+      <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Ocean background */}
+        <rect x={0} y={0} width={MAP_W} height={MAP_H} fill="#f2efe9" />
+        {/* Graticule lines */}
+        {[-60, -30, 0, 30, 60].map(lat => {
+          const y = (90 - lat) * MAP_H / 180
+          return <line key={`lat-${lat}`} x1={0} y1={y} x2={MAP_W} y2={y} stroke="#e8e4dc" strokeWidth={lat === 0 ? 1 : 0.5} />
+        })}
+        {[-120, -60, 0, 60, 120].map(lng => {
+          const x = (lng + 180) * MAP_W / 360
+          return <line key={`lng-${lng}`} x1={x} y1={0} x2={x} y2={MAP_H} stroke="#e8e4dc" strokeWidth="0.5" />
+        })}
+        {/* Continents */}
+        {WORLD_CONTINENTS.map(c => (
+          <path key={c.id} d={c.d} fill="#ddd9d0" stroke="#c8c4bc" strokeWidth="0.75" />
+        ))}
+        {/* Source dots by language */}
+        {Object.entries(langGroups).map(([lang, g]) => {
+          const coords = LANG_GEO[lang]
+          if (!coords) return null
+          const [lat, lng] = coords
+          const [sx, sy] = toMapXY(lat, lng)
+          const r = 5 + (g.count / maxCount) * 16
+          const typeCount: Record<string, number> = {}
+          for (const t of g.types) typeCount[t] = (typeCount[t] || 0) + 1
+          const dominantType = Object.entries(typeCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unverified'
+          const color = SOURCE_COLORS[dominantType] ?? '#888680'
+          const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
+          return (
+            <g key={lang}>
+              <circle cx={sx} cy={sy} r={r + 3} fill={color} opacity={0.15} />
+              <circle cx={sx} cy={sy} r={r} fill={color} opacity={0.75} stroke="white" strokeWidth="1"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={e => show(e, [lang.toUpperCase(), `${g.count} source${g.count !== 1 ? 's' : ''}`, `${fmtV(g.views)} views`])}
+                onMouseMove={move} onMouseLeave={hide}
+              />
+              {r >= 10 && (
+                <text x={sx} y={sy + 4} textAnchor="middle" fontSize="9" fill="white" fontFamily={MONO}
+                  style={{ pointerEvents: 'none', fontWeight: 700 }}>{lang}</text>
+              )}
+            </g>
+          )
+        })}
+        {/* Lat labels */}
+        {[60, 30, 0, -30, -60].map(lat => (
+          <text key={`llat-${lat}`} x={4} y={(90 - lat) * MAP_H / 180 + 4} fontSize="8" fill="#b0aca4" fontFamily={MONO}>{lat > 0 ? `${lat}°N` : lat < 0 ? `${-lat}°S` : '0°'}</text>
+        ))}
+      </svg>
+      <ChartTooltip tip={tip} />
     </div>
   )
 }
 
-function WhoReportedIt({ results, debunked, suspicious }: { results: any[]; debunked: boolean; suspicious: boolean }) {
-  const mobile = useMobile()
+// ── Chart: Platform distribution (donut) ─────────────────────────────────────
+
+const PLATFORM_COLORS_MAP: Record<string, string> = {
+  youtube: '#c8472a', newsapi: '#1a4a8a', gdelt: '#555452',
+  tiktok: '#1a6b4a', instagram: '#6b1a4a',
+}
+const PLATFORM_DISPLAY: Record<string, string> = {
+  youtube: 'YouTube', newsapi: 'News APIs', gdelt: 'GDELT',
+  tiktok: 'TikTok', instagram: 'Instagram',
+}
+
+function PlatformDonut({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
+  const show = (e: React.MouseEvent, platform: string, lines: string[]) => { setTip({ x: e.clientX, y: e.clientY, lines }); setHovered(platform) }
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => { setTip(null); setHovered(null) }
+
   if (results.length === 0) return null
 
-  const sorted = [...results].sort((a, b) => (SOURCE_RANK[a.sourceType] ?? 9) - (SOURCE_RANK[b.sourceType] ?? 9))
-  const spreadRows = sorted.filter(r => !isDebunker(r.title))
-  const debunkRows = sorted.filter(r =>  isDebunker(r.title))
+  const counts: Record<string, { count: number; views: number }> = {}
+  for (const r of results) {
+    const p = r.platform ?? 'newsapi'
+    if (!counts[p]) counts[p] = { count: 0, views: 0 }
+    counts[p].count++
+    counts[p].views += r.viewCount ?? 0
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1].count - a[1].count)
+  const total = entries.reduce((s, [, v]) => s + v.count, 0)
+  if (total === 0) return null
 
-  const title = debunked ? 'Who fell for it' : suspicious ? 'Who spread this claim' : 'Who ran the story'
-  const sub   = debunked
-    ? 'These outlets amplified the false claim. Debunking sources are listed separately below.'
-    : suspicious ? ''
-    : 'Sources that covered this story. Publishing is a choice — sorted by how much their verification process is worth trusting.'
+  const CX = 110, CY = 110, R_OUT = 84, R_IN = 50, SIZE = 220
+  let angle = -Math.PI / 2
 
-  const px = mobile ? '0 16px' : undefined
-  const ResultsView = ({ rows, darkBg }: { rows: any[]; darkBg: boolean }) =>
-    mobile ? <MobileResultsList rows={rows} darkBg={darkBg} /> : <SvgResultsTable rows={rows} darkBg={darkBg} />
+  const arcs = entries.map(([platform, data]) => {
+    const fraction = data.count / total
+    const sweep = fraction * Math.PI * 2
+    const a0 = angle, a1 = angle + sweep
+    angle = a1
+    const gap = entries.length > 1 ? 0.025 : 0
+    const cos0 = Math.cos(a0 + gap), sin0 = Math.sin(a0 + gap)
+    const cos1 = Math.cos(a1 - gap), sin1 = Math.sin(a1 - gap)
+    const r = hovered === platform ? R_OUT + 6 : R_OUT
+    const large = sweep > Math.PI ? 1 : 0
+    const d = `M ${(CX + cos0 * R_IN).toFixed(1)} ${(CY + sin0 * R_IN).toFixed(1)} L ${(CX + cos0 * r).toFixed(1)} ${(CY + sin0 * r).toFixed(1)} A ${r} ${r} 0 ${large} 1 ${(CX + cos1 * r).toFixed(1)} ${(CY + sin1 * r).toFixed(1)} L ${(CX + cos1 * R_IN).toFixed(1)} ${(CY + sin1 * R_IN).toFixed(1)} A ${R_IN} ${R_IN} 0 ${large} 0 ${(CX + cos0 * R_IN).toFixed(1)} ${(CY + sin0 * R_IN).toFixed(1)}`
+    const midA = (a0 + a1) / 2
+    const lx = CX + Math.cos(midA) * (R_OUT + 20)
+    const ly = CY + Math.sin(midA) * (R_OUT + 20)
+    return { platform, data, fraction, d, lx, ly }
+  })
+
+  const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
 
   return (
     <div>
-      <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: debunked ? '#c8472a' : '#0f0f0e', marginBottom: '6px', padding: px }}>{title}</p>
-      <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: debunked ? '12px' : '24px', padding: px }}>{sub}</p>
-      {debunked && (
-        <p style={{ fontFamily: MONO, fontSize: '9px', color: '#c8472a', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '20px', padding: px }}>● Claim independently debunked by fact-checkers</p>
-      )}
-      {spreadRows.length > 0 && <ResultsView rows={spreadRows} darkBg={debunked} />}
-      {debunkRows.length > 0 && (
-        <div style={{ marginTop: spreadRows.length > 0 ? '32px' : '0' }}>
-          <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1a6b4a', marginBottom: '6px', padding: px }}>Who debunked it</p>
-          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', marginBottom: '16px', padding: px }}>These sources investigated and contradicted the claim.</p>
-          <ResultsView rows={debunkRows} darkBg={debunked} />
+      <ChartHeader title="Platform mix" sub="How coverage is distributed across platforms." />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(200px, 100%)', height: 'auto', flexShrink: 0 }}>
+          {arcs.map(({ platform, data, fraction, d, lx, ly }) => {
+            const color = PLATFORM_COLORS_MAP[platform] ?? '#888680'
+            const pct = Math.round(fraction * 100)
+            return (
+              <g key={platform} style={{ cursor: 'pointer' }}
+                onMouseEnter={e => show(e, platform, [PLATFORM_DISPLAY[platform] ?? platform, `${data.count} sources · ${pct}%`, data.views > 0 ? `${fmtV(data.views)} views` : ''])}
+                onMouseMove={move} onMouseLeave={hide}
+              >
+                <path d={d} fill={color} opacity={hovered && hovered !== platform ? 0.35 : 0.88} />
+                {fraction > 0.09 && (
+                  <text x={lx} y={ly + 4} textAnchor="middle" fontSize="9" fill="#3a3a38" fontFamily={MONO}>{pct}%</text>
+                )}
+              </g>
+            )
+          })}
+          <text x={CX} y={CY - 8} textAnchor="middle" fontSize="24" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{total}</text>
+          <text x={CX} y={CY + 10} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.1em' }}>sources</text>
+        </svg>
+        <div style={{ flex: 1, minWidth: '130px' }}>
+          {arcs.map(({ platform, data }) => (
+            <div key={platform} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}
+              onMouseEnter={e => show(e as any, platform, [PLATFORM_DISPLAY[platform] ?? platform, `${data.count} sources`])}
+              onMouseLeave={hide}
+            >
+              <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: PLATFORM_COLORS_MAP[platform] ?? '#888680', flexShrink: 0 }} />
+              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', flex: 1 }}>{PLATFORM_DISPLAY[platform] ?? platform}</span>
+              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680' }}>{data.count}</span>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
+// ── Chart: Audience reach by source type ─────────────────────────────────────
+
+function ReachByType({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length === 0) return null
+
+  const typeStats: Record<string, { count: number; views: number }> = {}
+  for (const r of results) {
+    const t = r.sourceType ?? 'unverified'
+    if (!typeStats[t]) typeStats[t] = { count: 0, views: 0 }
+    typeStats[t].count++
+    typeStats[t].views += r.viewCount ?? 0
+  }
+
+  const entries = Object.entries(typeStats).sort((a, b) => b[1].views - a[1].views).filter(([, v]) => v.count > 0)
+  const maxViews = Math.max(...entries.map(([, v]) => v.views), 1)
+  const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
+
+  const W = 500, pL = 148, barR = 418, barW = barR - pL, rowH = 46, pT = 8
+  const H = pT + entries.length * rowH + 8
+
+  return (
+    <div>
+      <ChartHeader title="Audience reach" sub="Total estimated views per source tier. Shows which type drove the most exposure." />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {entries.map(([type, stats], i) => {
+          const y = pT + i * rowH
+          const bw = Math.max((stats.views / maxViews) * barW, stats.views > 0 ? 2 : 0)
+          const color = SOURCE_COLORS[type] ?? '#888680'
+          const label = SOURCE_LABELS[type] ?? type
+          return (
+            <g key={type} style={{ cursor: 'pointer' }}
+              onMouseEnter={e => show(e, [label, `${stats.count} source${stats.count !== 1 ? 's' : ''}`, `${fmtV(stats.views)} total views`])}
+              onMouseMove={move} onMouseLeave={hide}
+            >
+              <line x1={0} y1={y + rowH} x2={W} y2={y + rowH} stroke="#f0ede6" strokeWidth="0.5" />
+              <circle cx={10} cy={y + rowH / 2} r={4} fill={color} />
+              <text x={pL - 8} y={y + rowH / 2 - 5} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO}
+                style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</text>
+              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{stats.count} src</text>
+              <rect x={pL} y={y + 10} width={barW} height={18} fill="#f0ede6" />
+              <rect x={pL} y={y + 10} width={bw} height={18} fill={color} opacity={0.8} />
+              <text x={barR + 10} y={y + rowH / 2 + 5} fontSize="12" fontWeight="700" fill={color} fontFamily={MONO}>{fmtV(stats.views)}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <ChartTooltip tip={tip} />
     </div>
   )
 }
@@ -1377,10 +1526,10 @@ export default function Home() {
               <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
               <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
-              {/* Row 3: who reported it — full width */}
-              <C span={3} name="who-reported-it" bg={debunked ? '#1a0808' : '#f2efe9'}>
-                <WhoReportedIt results={results} debunked={debunked} suspicious={corroborationColor === 'suspicious'} />
-              </C>
+              {/* Row 3: geo spread | platform mix | audience reach */}
+              <C span={3} name="geo-spread"><GeoSpreadMap results={results} /></C>
+              <C span={1} name="platform-mix"><PlatformDonut results={results} /></C>
+              <C span={2} name="audience-reach"><ReachByType results={results} /></C>
 
               {/* Row 4: visual match — full width, conditional */}
               {hasVisualScores && <C span={3} name="visual-match"><VisualMatchChart results={results} /></C>}
