@@ -624,14 +624,29 @@ const toMapXY = (lat: number, lng: number): [number, number] => [
   Math.round((90 - lat) * MAP_H / 180),
 ]
 
+// Continent paths — equirectangular 800×380
+// x = (lng + 180) * 800/360,  y = (90 - lat) * 380/180
 const WORLD_CONTINENTS = [
-  { id: 'na', d: 'M 44 42 L 222 42 L 278 80 L 251 97 L 222 137 L 200 156 L 164 144 L 140 122 L 116 84 Z' },
-  { id: 'sa', d: 'M 238 173 L 284 179 L 322 200 L 304 238 L 282 260 L 249 306 L 238 285 L 231 211 Z' },
-  { id: 'eu', d: 'M 380 110 L 411 40 L 467 63 L 484 74 L 480 112 L 453 112 L 389 114 Z' },
-  { id: 'af', d: 'M 387 116 L 469 125 L 513 167 L 489 211 L 440 262 L 427 226 L 378 177 L 362 158 Z' },
-  { id: 'as', d: 'M 458 108 L 498 158 L 571 173 L 631 188 L 640 169 L 653 144 L 684 110 L 700 84 L 729 42 L 533 42 L 533 95 Z' },
-  { id: 'au', d: 'M 653 243 L 682 220 L 691 215 L 722 222 L 729 270 L 711 270 L 660 262 Z' },
-  { id: 'gl', d: 'M 302 63 L 249 30 L 320 15 L 351 38 Z' },
+  // North America — 22 pts, clockwise from NW Alaska
+  { id: 'na', d: 'M 29 63 L 40 74 L 62 68 L 89 65 L 111 78 L 124 89 L 129 110 L 140 120 L 156 141 L 171 152 L 207 147 L 222 138 L 233 117 L 244 102 L 260 98 L 282 91 L 276 78 L 240 47 L 222 38 L 133 38 L 49 42 L 27 51 Z' },
+  // Greenland — 7 pts
+  { id: 'gl', d: 'M 302 63 L 278 38 L 249 25 L 311 15 L 351 30 L 347 46 L 300 61 Z' },
+  // South America — 17 pts, clockwise from NW Colombia
+  { id: 'sa', d: 'M 229 173 L 253 169 L 264 169 L 320 179 L 322 200 L 318 211 L 304 237 L 291 248 L 273 264 L 260 279 L 249 304 L 251 308 L 238 279 L 242 243 L 233 222 L 220 200 L 222 190 Z' },
+  // Europe — 20 pts: Atlantic coast, Scandinavia, E Europe, Balkans, Iberia
+  { id: 'eu', d: 'M 380 112 L 380 100 L 391 89 L 404 82 L 413 68 L 458 40 L 462 42 L 456 63 L 453 70 L 440 76 L 482 70 L 482 91 L 471 93 L 462 104 L 451 112 L 436 110 L 427 97 L 416 99 L 400 112 L 391 112 Z' },
+  // Africa — 21 pts: N coast, Horn, S tip, W coast back to NW
+  { id: 'af', d: 'M 387 116 L 422 116 L 444 118 L 453 125 L 471 125 L 476 129 L 496 169 L 513 169 L 491 187 L 487 207 L 489 220 L 473 244 L 440 262 L 431 240 L 427 207 L 420 190 L 407 181 L 380 179 L 362 160 L 362 148 L 382 120 Z' },
+  // Asia — 27 pts: Turkey → Ural → Siberia → Kamchatka → E coast → SE Asia bump → India bump → Arabia bump → Sinai
+  { id: 'as', d: 'M 462 104 L 480 104 L 511 96 L 529 80 L 547 51 L 600 38 L 667 38 L 729 38 L 778 53 L 760 68 L 749 82 L 700 100 L 687 116 L 671 127 L 653 143 L 638 169 L 631 188 L 620 169 L 616 152 L 602 144 L 578 163 L 571 173 L 564 165 L 547 133 L 527 130 L 498 163 L 487 144 L 476 129 Z' },
+  // Australia — 8 pts
+  { id: 'au', d: 'M 682 220 L 691 215 L 720 220 L 740 241 L 729 270 L 713 270 L 660 264 L 653 234 Z' },
+  // Japan — 5 pts
+  { id: 'jp', d: 'M 706 113 L 714 100 L 720 101 L 718 110 L 712 118 Z' },
+  // British Isles — 5 pts
+  { id: 'uk', d: 'M 390 82 L 393 70 L 399 68 L 402 74 L 399 82 Z' },
+  // New Zealand — 4 pts
+  { id: 'nz', d: 'M 762 286 L 768 274 L 776 278 L 772 292 Z' },
 ]
 
 function GeoSpreadMap({ results }: { results: any[] }) {
@@ -1527,9 +1542,9 @@ export default function Home() {
               <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
               {/* Row 3: geo spread | platform mix | audience reach */}
-              <C span={3} name="geo-spread"><GeoSpreadMap results={results} /></C>
+              <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
               <C span={1} name="platform-mix"><PlatformDonut results={results} /></C>
-              <C span={2} name="audience-reach"><ReachByType results={results} /></C>
+              <C span={1} name="audience-reach"><ReachByType results={results} /></C>
 
               {/* Row 4: visual match — full width, conditional */}
               {hasVisualScores && <C span={3} name="visual-match"><VisualMatchChart results={results} /></C>}
