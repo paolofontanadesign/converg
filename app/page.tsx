@@ -1005,13 +1005,9 @@ function VisualVerdictHero({ checkedQuery, results, narrative, corroborationScor
 
 export default function Home() {
   const [query, setQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<{ title: string; source: string; publishedAt: string; description: string }[]>([])
-  const [suggLoading, setSuggLoading] = useState(false)
-  const [showSugg, setShowSugg] = useState(false)
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const chartsRef = useRef<HTMLDivElement>(null)
-  const suppressSuggRef = useRef(false)
   const [searched, setSearched] = useState(false)
   const [currentStep, setCurrentStep] = useState(-1)
   const [checkedQuery, setCheckedQuery] = useState<string>('')
@@ -1080,32 +1076,13 @@ export default function Home() {
 
   const [mounted, setMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [trendingNews, setTrendingNews] = useState<{ title: string; source: string; publishedAt: string }[]>([])
   useEffect(() => {
     setMounted(true)
     const checkMobile = () => setIsMobile(window.innerWidth < 640)
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    fetch('/api/trending').then(r => r.json()).then(d => { if (d.items?.length) setTrendingNews(d.items) }).catch(() => {})
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
-
-  // Debounced suggestion fetch
-  useEffect(() => {
-    const q = query.trim()
-    if (q.length < 3) { setSuggestions([]); setShowSugg(false); return }
-    setSuggLoading(true)
-    const timer = setTimeout(async () => {
-      try {
-        const r = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`)
-        const data = await r.json()
-        setSuggestions(data.suggestions ?? [])
-        if (!suppressSuggRef.current) setShowSugg(true)
-      } catch {}
-      setSuggLoading(false)
-    }, 400)
-    return () => { clearTimeout(timer); setSuggLoading(false) }
-  }, [query])
 
   const formatAge = (iso: string) => {
     if (!iso) return ''
@@ -1175,9 +1152,6 @@ export default function Home() {
   const analyze = async (overrideQuery?: string) => {
     const q = (overrideQuery ?? query).trim()
     if (!q) return
-    suppressSuggRef.current = true
-    setShowSugg(false)
-    setSuggestions([])
     setResults([])
     setSearched(false)
     setCheckedQuery('')
@@ -1289,16 +1263,16 @@ export default function Home() {
       </header>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
-      <div style={{ flex: 1, maxWidth: isMobile ? '100%' : '760px', padding: isMobile ? '40px 20px 0' : '64px 40px 0' }}>
-        <p style={{ fontFamily: MONO, fontSize: '15px', color: '#c8472a', marginBottom: '20px' }}>OSINT intelligence,{isMobile ? <br /> : ' '}simplified for the curious.</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: '40px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '20px' }}>
-          Real events leave <em style={{ color: '#3a3a38' }}>multiple traces.</em>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : '0 40px 80px' }}>
+        <div style={{ width: '100%', maxWidth: '600px', textAlign: 'center' }}>
+        <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>OSINT intelligence, simplified for the curious.</p>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px' }}>
+          Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
         </h1>
-        <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '48px', maxWidth: '540px' }}>
-          Type a few words in any language — recent headlines will appear. Pick one or describe freely. Converg scores reliability using source diversity, timing and outrage signals.
+        <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '40px' }}>
+          Type a few words in any language or describe freely. Converg scores reliability using source diversity, timing and outrage signals.
         </p>
-        <div style={{ position: 'relative', marginBottom: '48px' }}>
+        <div style={{ position: 'relative', marginBottom: '24px' }}>
           <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
             {isMobile ? (
               <textarea
@@ -1308,8 +1282,6 @@ export default function Home() {
                 rows={3}
                 onChange={e => { setQuery(e.target.value) }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !loading) { e.preventDefault(); analyze() } }}
-                onFocus={() => { suppressSuggRef.current = false; (suggestions.length > 0 || suggLoading) && setShowSugg(true) }}
-                onBlur={() => setTimeout(() => setShowSugg(false), 150)}
                 disabled={loading}
                 style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent', resize: 'none', lineHeight: '1.5' }}
               />
@@ -1321,8 +1293,6 @@ export default function Home() {
                 maxLength={100}
                 onChange={e => { setQuery(e.target.value) }}
                 onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
-                onFocus={() => { suppressSuggRef.current = false; (suggestions.length > 0 || suggLoading) && setShowSugg(true) }}
-                onBlur={() => setTimeout(() => setShowSugg(false), 150)}
                 disabled={loading}
                 style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '16px 20px', fontFamily: MONO, fontSize: '16px', color: '#0f0f0e', background: 'transparent' }}
               />
@@ -1333,35 +1303,10 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Suggestions dropdown */}
-          {showSugg && !loading && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #0f0f0e', borderTop: 'none', zIndex: 1000, maxHeight: '380px', overflowY: 'auto' }}>
-              {suggLoading && (
-                <div style={{ padding: '14px 20px', fontFamily: MONO, fontSize: '11px', color: '#888680', letterSpacing: '0.06em' }}>Ricerca in corso…</div>
-              )}
-              {!suggLoading && suggestions.length === 0 && (
-                <div style={{ padding: '14px 20px', fontFamily: MONO, fontSize: '11px', color: '#888680', letterSpacing: '0.06em' }}>Nessuna notizia trovata</div>
-              )}
-              {suggestions.map((s, i) => (
-                <div
-                  key={i}
-                  onMouseDown={e => { e.preventDefault(); analyze(s.title) }}
-                  style={{ padding: '12px 20px', borderBottom: i < suggestions.length - 1 ? '1px solid #edeae3' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f7f4ef')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'white')}
-                >
-                  <div style={{ fontFamily: SANS, fontSize: '14px', color: '#0f0f0e', lineHeight: 1.4, marginBottom: '4px' }}>{s.title}</div>
-                  <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', letterSpacing: '0.04em' }}>
-                    {s.source}{s.source && s.publishedAt ? ' · ' : ''}{formatAge(s.publishedAt)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {loading && (
-          <div style={{ marginBottom: '48px' }}>
+          <div style={{ marginBottom: '48px', textAlign: 'left' }}>
             {steps.map((step, i) => {
               const done = i < currentStep, active = i === currentStep, pending = i > currentStep
               return (
@@ -1387,54 +1332,12 @@ export default function Home() {
         )}
 
         {error && !loading && (
-          <div style={{ border: '1px solid #c8472a', background: '#fff8f7', padding: '20px 24px', marginBottom: '24px' }}>
+          <div style={{ border: '1px solid #c8472a', background: '#fff8f7', padding: '20px 24px', marginBottom: '24px', textAlign: 'left' }}>
             <p style={{ fontFamily: MONO, fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#c8472a', marginBottom: '6px' }}>Error</p>
             <p style={{ fontFamily: SANS, fontSize: '13px', color: '#3a3a38' }}>{error}</p>
           </div>
         )}
-      </div>
-
-      {/* ── Trending news (right column) ────────────────────────────────────── */}
-      {mounted && trendingNews.length > 0 && (
-        <div style={{ width: isMobile ? '100%' : '260px', flexShrink: 0, borderLeft: isMobile ? 'none' : '1px solid #edeae3', borderTop: isMobile ? '1px solid #edeae3' : 'none', padding: isMobile ? '24px 20px 48px' : '64px 32px 64px 32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', margin: 0 }}>Circulating now</p>
-            <button onClick={() => {
-              setTrendingNews([])
-              fetch('/api/trending?r=' + Date.now()).then(r => r.json()).then(d => { if (d.items?.length) setTrendingNews(d.items) }).catch(() => {})
-            }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#888680', display: 'flex', alignItems: 'center' }}
-              title="Refresh"
-              onMouseEnter={e => (e.currentTarget.style.color = '#0f0f0e')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#888680')}
-            >
-              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9.5 5.5A4 4 0 1 1 5.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                <path d="M5.5 1.5 L8 1.5 L8 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          </div>
-          {trendingNews.map((item, i) => {
-            const parsePub = (s: string) => {
-              const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/)
-              return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`) : new Date(s)
-            }
-            const hoursAgo = item.publishedAt ? Math.max(0, Math.round((Date.now() - parsePub(item.publishedAt).getTime()) / 3_600_000)) : null
-            return (
-              <button key={i} onClick={() => setQuery(item.title)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #edeae3', padding: '10px 0', cursor: 'pointer' }}>
-                {item.source && (
-                  <span style={{ display: 'block', fontFamily: MONO, fontSize: '9px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
-                    {item.source}{hoursAgo !== null ? ` · ${hoursAgo}h ago` : ''}
-                  </span>
-                )}
-                <span style={{ fontFamily: SANS, fontSize: '12px', color: '#0f0f0e', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {item.title}
-                </span>
-              </button>
-            )
-          })}
         </div>
-      )}
       </div>
 
       {/* ── Dashboard ──────────────────────────────────────────────────────── */}
