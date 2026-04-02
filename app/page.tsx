@@ -1289,7 +1289,7 @@ export default function Home() {
   const C = ({ children, span = 6, bg = '#f7f4ef', style, name, noSvg }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string; noSvg?: boolean }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     return (
-      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, padding: isMobile ? '24px 0' : '32px 28px', minWidth: 0, overflow: isMobile ? 'visible' : 'hidden', position: 'relative', ...style }}>
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, aspectRatio: '1', position: 'relative', overflow: 'hidden', minWidth: 0, ...style }}>
         {children}
         {name && !noSvg && (
           <button
