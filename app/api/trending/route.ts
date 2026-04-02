@@ -4,16 +4,18 @@ type TrendingItem = { title: string; source: string; publishedAt: string }
 let cache: { items: TrendingItem[]; at: number } | null = null
 const TTL = 5 * 60 * 1000
 
-export async function GET() {
-  if (cache && cache.items.length > 0 && Date.now() - cache.at < TTL) {
-    return Response.json({ items: cache.items })
+export async function GET(request: Request) {
+  const bust = new URL(request.url).searchParams.has('r')
+  const headers = { 'Cache-Control': 'no-store' }
+  if (!bust && cache && cache.items.length > 0 && Date.now() - cache.at < TTL) {
+    return Response.json({ items: cache.items }, { headers })
   }
 
   const items: TrendingItem[] = []
 
   // Try NewsAPI first
   try {
-    const key = process.env.NEWS_API_KEY
+    const key = process.env.NEWSAPI_KEY
     if (key) {
       const res = await fetch(
         `https://newsapi.org/v2/top-headlines?language=en&pageSize=15&apiKey=${key}`,
@@ -65,5 +67,5 @@ export async function GET() {
   console.log('[trending] final items count:', items.length)
   const result = items.slice(0, 10)
   if (result.length > 0) cache = { items: result, at: Date.now() }
-  return Response.json({ items: result })
+  return Response.json({ items: result }, { headers })
 }

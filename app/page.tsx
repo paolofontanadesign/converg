@@ -1086,16 +1086,7 @@ export default function Home() {
     const checkMobile = () => setIsMobile(window.innerWidth < 640)
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    fetch('https://api.gdeltproject.org/api/v2/doc/doc?query=(war+OR+election+OR+economy+OR+climate+OR+conflict)&mode=artlist&maxrecords=25&format=json&sort=datedesc&timespan=12h')
-      .then(r => r.json())
-      .then(data => {
-        const items = (data.articles ?? [])
-          .filter((a: any) => a.title && a.language === 'English')
-          .slice(0, 10)
-          .map((a: any) => ({ title: a.title.trim(), source: a.domain ?? '', publishedAt: a.seendate ?? '' }))
-        if (items.length) setTrendingNews(items)
-      })
-      .catch(() => {})
+    fetch('/api/trending').then(r => r.json()).then(d => { if (d.items?.length) setTrendingNews(d.items) }).catch(() => {})
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
@@ -1410,16 +1401,7 @@ export default function Home() {
             <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', margin: 0 }}>Circulating now</p>
             <button onClick={() => {
               setTrendingNews([])
-              fetch('https://api.gdeltproject.org/api/v2/doc/doc?query=(war+OR+election+OR+economy+OR+climate+OR+conflict)&mode=artlist&maxrecords=25&format=json&sort=datedesc&timespan=12h')
-                .then(r => r.json())
-                .then(data => {
-                  const items = (data.articles ?? [])
-                    .filter((a: any) => a.title && a.language === 'English')
-                    .slice(0, 10)
-                    .map((a: any) => ({ title: a.title.trim(), source: a.domain ?? '', publishedAt: a.seendate ?? '' }))
-                  if (items.length) setTrendingNews(items)
-                })
-                .catch(() => {})
+              fetch('/api/trending?r=' + Date.now()).then(r => r.json()).then(d => { if (d.items?.length) setTrendingNews(d.items) }).catch(() => {})
             }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#888680', display: 'flex', alignItems: 'center' }}
               title="Refresh"
               onMouseEnter={e => (e.currentTarget.style.color = '#0f0f0e')}
