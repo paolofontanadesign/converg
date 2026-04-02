@@ -725,99 +725,6 @@ function GeoSpreadMap({ results }: { results: any[] }) {
   )
 }
 
-// ── Chart: Platform distribution (donut) ─────────────────────────────────────
-
-const PLATFORM_COLORS_MAP: Record<string, string> = {
-  youtube: '#c8472a', newsapi: '#1a4a8a', gdelt: '#555452',
-  tiktok: '#1a6b4a', instagram: '#6b1a4a',
-}
-const PLATFORM_DISPLAY: Record<string, string> = {
-  youtube: 'YouTube', newsapi: 'News APIs', gdelt: 'GDELT',
-  tiktok: 'TikTok', instagram: 'Instagram',
-}
-
-function PlatformDonut({ results }: { results: any[] }) {
-  const [tip, setTip] = useState<Tip | null>(null)
-  const [hovered, setHovered] = useState<string | null>(null)
-  const show = (e: React.MouseEvent, platform: string, lines: string[]) => { setTip({ x: e.clientX, y: e.clientY, lines }); setHovered(platform) }
-  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
-  const hide = () => { setTip(null); setHovered(null) }
-
-  if (results.length === 0) return null
-
-  const counts: Record<string, { count: number; views: number }> = {}
-  for (const r of results) {
-    const p = r.platform ?? 'newsapi'
-    if (!counts[p]) counts[p] = { count: 0, views: 0 }
-    counts[p].count++
-    counts[p].views += r.viewCount ?? 0
-  }
-  const entries = Object.entries(counts).sort((a, b) => b[1].count - a[1].count)
-  const total = entries.reduce((s, [, v]) => s + v.count, 0)
-  if (total === 0) return null
-
-  const CX = 110, CY = 110, R_OUT = 84, R_IN = 50, SIZE = 220
-  let angle = -Math.PI / 2
-
-  const arcs = entries.map(([platform, data]) => {
-    const fraction = data.count / total
-    const sweep = fraction * Math.PI * 2
-    const a0 = angle, a1 = angle + sweep
-    angle = a1
-    const gap = entries.length > 1 ? 0.025 : 0
-    const cos0 = Math.cos(a0 + gap), sin0 = Math.sin(a0 + gap)
-    const cos1 = Math.cos(a1 - gap), sin1 = Math.sin(a1 - gap)
-    const r = hovered === platform ? R_OUT + 6 : R_OUT
-    const large = sweep > Math.PI ? 1 : 0
-    const d = `M ${(CX + cos0 * R_IN).toFixed(1)} ${(CY + sin0 * R_IN).toFixed(1)} L ${(CX + cos0 * r).toFixed(1)} ${(CY + sin0 * r).toFixed(1)} A ${r} ${r} 0 ${large} 1 ${(CX + cos1 * r).toFixed(1)} ${(CY + sin1 * r).toFixed(1)} L ${(CX + cos1 * R_IN).toFixed(1)} ${(CY + sin1 * R_IN).toFixed(1)} A ${R_IN} ${R_IN} 0 ${large} 0 ${(CX + cos0 * R_IN).toFixed(1)} ${(CY + sin0 * R_IN).toFixed(1)}`
-    const midA = (a0 + a1) / 2
-    const lx = CX + Math.cos(midA) * (R_OUT + 20)
-    const ly = CY + Math.sin(midA) * (R_OUT + 20)
-    return { platform, data, fraction, d, lx, ly }
-  })
-
-  const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
-
-  return (
-    <div>
-      <ChartHeader title="Platform mix" sub="How coverage is distributed across platforms." />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: 'min(200px, 100%)', height: 'auto', flexShrink: 0 }}>
-          {arcs.map(({ platform, data, fraction, d, lx, ly }) => {
-            const color = PLATFORM_COLORS_MAP[platform] ?? '#888680'
-            const pct = Math.round(fraction * 100)
-            return (
-              <g key={platform} style={{ cursor: 'pointer' }}
-                onMouseEnter={e => show(e, platform, [PLATFORM_DISPLAY[platform] ?? platform, `${data.count} sources · ${pct}%`, data.views > 0 ? `${fmtV(data.views)} views` : ''])}
-                onMouseMove={move} onMouseLeave={hide}
-              >
-                <path d={d} fill={color} opacity={hovered && hovered !== platform ? 0.35 : 0.88} />
-                {fraction > 0.09 && (
-                  <text x={lx} y={ly + 4} textAnchor="middle" fontSize="9" fill="#3a3a38" fontFamily={MONO}>{pct}%</text>
-                )}
-              </g>
-            )
-          })}
-          <text x={CX} y={CY - 8} textAnchor="middle" fontSize="24" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{total}</text>
-          <text x={CX} y={CY + 10} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.1em' }}>sources</text>
-        </svg>
-        <div style={{ flex: 1, minWidth: '130px' }}>
-          {arcs.map(({ platform, data }) => (
-            <div key={platform} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}
-              onMouseEnter={e => show(e as any, platform, [PLATFORM_DISPLAY[platform] ?? platform, `${data.count} sources`])}
-              onMouseLeave={hide}
-            >
-              <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: PLATFORM_COLORS_MAP[platform] ?? '#888680', flexShrink: 0 }} />
-              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e', flex: 1 }}>{PLATFORM_DISPLAY[platform] ?? platform}</span>
-              <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680' }}>{data.count}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <ChartTooltip tip={tip} />
-    </div>
-  )
-}
 
 // ── Chart: Audience reach by source type ─────────────────────────────────────
 
@@ -1173,13 +1080,22 @@ export default function Home() {
 
   const [mounted, setMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [recentQueries, setRecentQueries] = useState<string[]>([])
+  const [trendingNews, setTrendingNews] = useState<{ title: string; source: string; publishedAt: string }[]>([])
   useEffect(() => {
     setMounted(true)
     const checkMobile = () => setIsMobile(window.innerWidth < 640)
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    try { setRecentQueries(JSON.parse(localStorage.getItem('convergRecentQueries') ?? '[]')) } catch {}
+    fetch('https://api.gdeltproject.org/api/v2/doc/doc?query=(war+OR+election+OR+economy+OR+climate+OR+conflict)&mode=artlist&maxrecords=25&format=json&sort=datedesc&timespan=12h')
+      .then(r => r.json())
+      .then(data => {
+        const items = (data.articles ?? [])
+          .filter((a: any) => a.title && a.language === 'English')
+          .slice(0, 10)
+          .map((a: any) => ({ title: a.title.trim(), source: a.domain ?? '', publishedAt: a.seendate ?? '' }))
+        if (items.length) setTrendingNews(items)
+      })
+      .catch(() => {})
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
@@ -1276,11 +1192,6 @@ export default function Home() {
     setCheckedQuery('')
     setError(null)
     if (overrideQuery) setQuery(overrideQuery)
-    try {
-      const updated = [q, ...recentQueries.filter(r => r !== q)].slice(0, 10)
-      localStorage.setItem('convergRecentQueries', JSON.stringify(updated))
-      setRecentQueries(updated)
-    } catch {}
     setNarrative('')
     setAiScores({ outrage: 5, simplicity: 5, credibility: 5 })
     setOutrageMultiplier(1.0)
@@ -1492,16 +1403,54 @@ export default function Home() {
         )}
       </div>
 
-      {/* ── Recent queries (right column) ───────────────────────────────────── */}
-      {mounted && recentQueries.length > 0 && (
-        <div style={{ width: isMobile ? '100%' : '260px', flexShrink: 0, borderLeft: isMobile ? 'none' : '1px solid #edeae3', borderTop: isMobile ? '1px solid #edeae3' : 'none', padding: isMobile ? '24px 20px 0' : '64px 32px 0 32px' }}>
-          <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', marginBottom: '20px' }}>Recently searched</p>
-          {recentQueries.map((q, i) => (
-            <button key={i} onClick={() => setQuery(q)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #edeae3', padding: '10px 0', fontFamily: MONO, fontSize: '11px', color: '#3a3a38', cursor: 'pointer', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {q}
+      {/* ── Trending news (right column) ────────────────────────────────────── */}
+      {mounted && trendingNews.length > 0 && (
+        <div style={{ width: isMobile ? '100%' : '260px', flexShrink: 0, borderLeft: isMobile ? 'none' : '1px solid #edeae3', borderTop: isMobile ? '1px solid #edeae3' : 'none', padding: isMobile ? '24px 20px 48px' : '64px 32px 64px 32px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <p style={{ fontFamily: MONO, fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888680', margin: 0 }}>Circulating now</p>
+            <button onClick={() => {
+              setTrendingNews([])
+              fetch('https://api.gdeltproject.org/api/v2/doc/doc?query=(war+OR+election+OR+economy+OR+climate+OR+conflict)&mode=artlist&maxrecords=25&format=json&sort=datedesc&timespan=12h')
+                .then(r => r.json())
+                .then(data => {
+                  const items = (data.articles ?? [])
+                    .filter((a: any) => a.title && a.language === 'English')
+                    .slice(0, 10)
+                    .map((a: any) => ({ title: a.title.trim(), source: a.domain ?? '', publishedAt: a.seendate ?? '' }))
+                  if (items.length) setTrendingNews(items)
+                })
+                .catch(() => {})
+            }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#888680', display: 'flex', alignItems: 'center' }}
+              title="Refresh"
+              onMouseEnter={e => (e.currentTarget.style.color = '#0f0f0e')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#888680')}
+            >
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9.5 5.5A4 4 0 1 1 5.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                <path d="M5.5 1.5 L8 1.5 L8 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </button>
-          ))}
+          </div>
+          {trendingNews.map((item, i) => {
+            const parsePub = (s: string) => {
+              const m = s.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/)
+              return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`) : new Date(s)
+            }
+            const hoursAgo = item.publishedAt ? Math.max(0, Math.round((Date.now() - parsePub(item.publishedAt).getTime()) / 3_600_000)) : null
+            return (
+              <button key={i} onClick={() => setQuery(item.title)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #edeae3', padding: '10px 0', cursor: 'pointer' }}>
+                {item.source && (
+                  <span style={{ display: 'block', fontFamily: MONO, fontSize: '9px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+                    {item.source}{hoursAgo !== null ? ` · ${hoursAgo}h ago` : ''}
+                  </span>
+                )}
+                <span style={{ fontFamily: SANS, fontSize: '12px', color: '#0f0f0e', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {item.title}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
       </div>
@@ -1541,9 +1490,8 @@ export default function Home() {
               <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
               <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
-              {/* Row 3: geo spread | platform mix | audience reach */}
-              <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
-              <C span={1} name="platform-mix"><PlatformDonut results={results} /></C>
+              {/* Row 3: geo spread | audience reach */}
+              <C span={2} name="geo-spread"><GeoSpreadMap results={results} /></C>
               <C span={1} name="audience-reach"><ReachByType results={results} /></C>
 
               {/* Row 4: visual match — full width, conditional */}
