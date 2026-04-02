@@ -782,6 +782,65 @@ function ReachByType({ results }: { results: any[] }) {
   )
 }
 
+// ── Chart: Language distribution ──────────────────────────────────────────────
+
+const LANG_NAMES: Record<string, string> = {
+  en: 'English', fr: 'French', de: 'German', es: 'Spanish', it: 'Italian',
+  pt: 'Portuguese', ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean',
+  ar: 'Arabic', hi: 'Hindi', tr: 'Turkish', nl: 'Dutch', pl: 'Polish',
+  sv: 'Swedish', uk: 'Ukrainian', he: 'Hebrew', fa: 'Persian', id: 'Indonesian',
+  vi: 'Vietnamese', th: 'Thai', ms: 'Malay', ro: 'Romanian', cs: 'Czech',
+  hu: 'Hungarian', el: 'Greek', da: 'Danish', fi: 'Finnish', no: 'Norwegian',
+}
+
+function LangDistribution({ results }: { results: any[] }) {
+  const [tip, setTip] = useState<Tip | null>(null)
+  const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
+  const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
+  const hide = () => setTip(null)
+
+  if (results.length === 0) return null
+
+  const counts: Record<string, number> = {}
+  for (const r of results) {
+    const l = (r.language ?? 'en').toLowerCase().slice(0, 2)
+    counts[l] = (counts[l] ?? 0) + 1
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+  const maxCount = Math.max(...entries.map(([, c]) => c), 1)
+
+  const W = 500, pL = 120, barR = 390, barW = barR - pL, rowH = 42, pT = 8
+  const H = pT + entries.length * rowH + 8
+
+  return (
+    <div>
+      <ChartHeader title="Language spread" sub="Number of sources per language. Multilingual coverage strengthens corroboration." />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {entries.map(([lang, count], i) => {
+          const y = pT + i * rowH
+          const bw = Math.max((count / maxCount) * barW, 2)
+          const pct = Math.round((count / results.length) * 100)
+          return (
+            <g key={lang} style={{ cursor: 'pointer' }}
+              onMouseEnter={e => show(e, [LANG_NAMES[lang] ?? lang.toUpperCase(), `${count} source${count !== 1 ? 's' : ''}`, `${pct}% of total`])}
+              onMouseMove={move} onMouseLeave={hide}
+            >
+              <line x1={0} y1={y + rowH} x2={W} y2={y + rowH} stroke="#f0ede6" strokeWidth="0.5" />
+              <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO}
+                style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{LANG_NAMES[lang] ?? lang.toUpperCase()}</text>
+              <text x={pL - 8} y={y + rowH / 2 + 9} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{lang.toUpperCase()}</text>
+              <rect x={pL} y={y + 10} width={barW} height={16} fill="#f0ede6" />
+              <rect x={pL} y={y + 10} width={bw} height={16} fill="#0f0f0e" opacity={0.75} />
+              <text x={barR + 10} y={y + rowH / 2 + 5} fontSize="12" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{count}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <ChartTooltip tip={tip} />
+    </div>
+  )
+}
+
 // ── Chart 12: Upload clock (24h polar) ────────────────────────────────────────
 
 function UploadClock({ results }: { results: any[] }) {
@@ -1265,8 +1324,10 @@ export default function Home() {
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : '0 40px 80px' }}>
         <div style={{ width: '100%', maxWidth: '600px', textAlign: 'center' }}>
-        <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>OSINT intelligence, simplified for the curious.</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px' }}>
+        <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
+          OSINT intelligence,{isMobile ? <br /> : ' '}simplified for the curious.
+        </p>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
         </h1>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '40px' }}>
@@ -1375,9 +1436,10 @@ export default function Home() {
               <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
               <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
-              {/* Row 3: geo spread | audience reach */}
-              <C span={2} name="geo-spread"><GeoSpreadMap results={results} /></C>
+              {/* Row 3: geo spread | audience reach | language spread */}
+              <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
               <C span={1} name="audience-reach"><ReachByType results={results} /></C>
+              <C span={1} name="lang-distribution"><LangDistribution results={results} /></C>
 
               {/* Row 4: visual match — full width, conditional */}
               {hasVisualScores && <C span={3} name="visual-match"><VisualMatchChart results={results} /></C>}
