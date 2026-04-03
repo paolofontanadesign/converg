@@ -1212,6 +1212,9 @@ export default function Home() {
               setSearched(true)
               setLoading(false)
               setCurrentStep(-1)
+              setTimeout(() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }, 100)
             }
             if (data.error) {
               setError(data.error)
