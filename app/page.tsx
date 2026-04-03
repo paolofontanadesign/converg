@@ -1366,15 +1366,10 @@ export default function Home() {
               <C span={1} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
               {hasUploadClock && <C span={1} name="upload-clock"><UploadClock results={results} /></C>}
 
-              {/* Row 2: swim lanes | waterfall | red flags */}
+              {/* Row 2: swim lanes | waterfall */}
               <C span={1} name="swim-lanes"><SwimLanes results={results} /></C>
               <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
-              <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
-
-              {/* Row 3: geo spread | audience reach | language spread */}
               <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
-              <C span={1} name="audience-reach"><ReachByType results={results} /></C>
-              <C span={1} name="lang-distribution"><LangDistribution results={results} /></C>
 
             </div>
             </MobileCtx.Provider>
