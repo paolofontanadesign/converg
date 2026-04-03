@@ -504,18 +504,19 @@ export async function GET(request: NextRequest) {
           // Running this BEFORE vision ensures we don't score off-topic videos against the wrong reference.
           const analysisRes = await anthropicFetch({
             model: 'claude-haiku-4-5-20251001',
-            max_tokens: 300,
+            max_tokens: 400,
             messages: [{
               role: 'user',
               content: `You are a corroboration analyst. Your job is to assess what the PROVIDED SOURCES say about a claim — NOT to fact-check it against your training data. Your training knowledge is stale; the sources are current. Respond with JSON only (no markdown):
-{"narrative":"max 40 words: what the found sources collectively say about the claim, then one sentence on source diversity. No verdicts from your own knowledge. No hedging.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[]}
+{"narrative":"max 40 words: what the found sources collectively say about the claim, then one sentence on source diversity. No verdicts from your own knowledge. No hedging.","outrageScore":0-10,"simplicityScore":0-10,"credibilityScore":0-10,"irrelevantIndices":[],"contradictingIndices":[]}
 
 CRITICAL: Do NOT use your pre-training knowledge to evaluate truth. Base ALL scores only on the provided source titles and metadata.
 
 outrageScore: emotional manipulation in titles (0=neutral/factual, 10=highly emotional/outrage-bait)
 simplicityScore: narrative consistency across sources (10=all tell the same story, 0=sources contradict each other)
 credibilityScore: how strongly the PROVIDED SOURCES confirm the claim (0=sources actively debunk or contradict it; 3=no relevant sources found; 5=tangentially related coverage only; 7=some credible sources report on it; 9=multiple credible outlets confirm; 10=wire agencies like AP/Reuters/AFP explicitly confirm). If agency or major-outlet sources cover the claim without debunking it, score HIGH even if the claim seems unusual — recent events can surprise. Only score LOW if sources explicitly deny or debunk the claim.
-irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim — e.g. a UFO sighting video when the claim is about a nuclear reactor design. Keep results that discuss the same claim in any language, framing, or angle (including debunks). Do NOT mark a result just because it uses different words for the same subject.
+irrelevantIndices: 0-based indices of sources about a clearly different subject. Mark a result only when its topic is genuinely unrelated to the claim. Do NOT mark a result just because it uses different words for the same subject.
+contradictingIndices: 0-based indices of sources that EXPLICITLY STATE THE OPPOSITE of the claim. Examples: claim="Italy qualified for the World Cup" → mark sources saying "Italy eliminated" or "Italy failed to qualify". Claim="X happened" → mark sources saying "X did not happen / was denied / was cancelled". Only mark sources with clear factual contradiction, NOT just skepticism or debunking framing.
 
 Claim: "${query}"
 Sources (${resultsWithTiming.length} total — ${videoItems.length} videos, ${articleItems.length} articles):
@@ -525,6 +526,7 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
 
           // Parse analysis and remove off-topic results BEFORE vision scoring
           const irrelevantIndices = new Set<number>()
+          const contradictingIndices = new Set<number>()
           try {
             const text  = analysisRes?.content?.[0]?.text ?? '{}'
             const match = text.match(/\{[\s\S]*\}/)
@@ -539,12 +541,33 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
                 if (typeof idx === 'number') irrelevantIndices.add(idx)
               }
             }
+            if (Array.isArray(parsed.contradictingIndices)) {
+              for (const idx of parsed.contradictingIndices) {
+                if (typeof idx === 'number' && !irrelevantIndices.has(idx)) contradictingIndices.add(idx)
+              }
+            }
           } catch {}
 
-          // Remove off-topic results before vision scoring — this ensures refVideo is always on-topic
-          if (irrelevantIndices.size > 0) {
+          // Credibility penalty from contradicting authoritative sources:
+          // Each agency/major contradicting source drops credibility by 2.5 pts, others by 1 pt.
+          if (contradictingIndices.size > 0) {
+            let penalty = 0
+            for (const idx of contradictingIndices) {
+              const r = resultsWithTiming[idx]
+              if (!r) continue
+              if (r.sourceType === 'agency') penalty += 3.5
+              else if (r.sourceType === 'major') penalty += 2.5
+              else if (r.sourceType === 'independent') penalty += 1.5
+              else penalty += 0.75
+            }
+            credibilityScore = Math.max(0, credibilityScore - penalty)
+          }
+
+          // Remove off-topic AND contradicting results before vision scoring
+          const excludedIndices = new Set([...irrelevantIndices, ...contradictingIndices])
+          if (excludedIndices.size > 0) {
             resultsWithTiming.splice(0, resultsWithTiming.length,
-              ...resultsWithTiming.filter((_: any, i: number) => !irrelevantIndices.has(i))
+              ...resultsWithTiming.filter((_: any, i: number) => !excludedIndices.has(i))
             )
           }
 
