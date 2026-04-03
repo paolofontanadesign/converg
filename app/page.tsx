@@ -92,126 +92,98 @@ function ChartHeader({ title, sub }: { title: string; sub: string }) {
 // ── Chart 1: Cumulative corroboration score over time ────────────────────────
 
 function CorroborationBuildup({ results }: { results: any[] }) {
-  const mobile = useMobile()
   const [tip, setTip] = useState<Tip | null>(null)
   const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
   const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
   const hide = () => setTip(null)
 
   const sorted = [...results].sort((a, b) => a.hoursAfterSource - b.hoursAfterSource)
-  const W = 620, H = 180, pL = 56, pR = 24, pT = 36, pB = 36
-  const xMin = -48, xMax = 48, plotW = W - pL - pR, plotH = H - pT - pB
-  const xS = (h: number) => pL + ((h - xMin) / (xMax - xMin)) * plotW
+  const pL = 52, pR = 16, pT = 38, chartH = 170
+  const chartBottom = pT + chartH
+  const plotW = 400 - pL - pR
+  const xMin = -48, xMax = 48
   const totalScore = sorted.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
   const yMax = Math.max(totalScore, 6, 0.1)
-  const yS = (s: number) => H - pB - (s / yMax) * plotH
+  const xS = (h: number) => pL + ((Math.max(xMin, Math.min(xMax, h)) - xMin) / (xMax - xMin)) * plotW
+  const yS = (s: number) => chartBottom - (s / yMax) * chartH
+  const x0 = xS(0)
 
-  // Build step path + collect event points
   const pts: [number, number][] = [[xMin, 0]]
   const events: { h: number; score: number; r: any }[] = []
   let cum = 0
   for (const r of sorted) {
     const h = Math.max(xMin, Math.min(xMax, r.hoursAfterSource))
-    pts.push([h, cum])
-    cum += SOURCE_WEIGHTS[r.sourceType] ?? 1
-    pts.push([h, cum])
+    pts.push([h, cum]); cum += SOURCE_WEIGHTS[r.sourceType] ?? 1; pts.push([h, cum])
     events.push({ h, score: cum, r })
   }
   pts.push([xMax, cum])
-
   const d = pts.map(([h, s], i) => `${i === 0 ? 'M' : 'L'}${xS(h).toFixed(1)},${yS(s).toFixed(1)}`).join(' ')
-  const fill = d + ` L${xS(xMax).toFixed(1)},${yS(0).toFixed(1)} L${xS(xMin).toFixed(1)},${yS(0).toFixed(1)} Z`
-  const x0 = xS(0)
-  const showPartial = yMax >= 2
-  const showCorr = yMax >= 6
+  const fillPath = d + ` L${xS(xMax).toFixed(1)},${yS(0).toFixed(1)} L${xS(xMin).toFixed(1)},${yS(0).toFixed(1)} Z`
 
-  // Summary stats
   const finalScore = Math.min(cum, 10)
   const hours = sorted.map(r => r.hoursAfterSource)
   const timeSpan = hours.length > 1 ? Math.max(...hours) - Math.min(...hours) : 0
   const corrHit = events.find(e => e.score >= 6)
   const corrHitH = corrHit ? corrHit.r.hoursAfterSource : null
-  const byType = Object.entries(
-    sorted.reduce((acc: Record<string, number>, r) => {
-      acc[r.sourceType] = (acc[r.sourceType] ?? 0) + 1
-      return acc
-    }, {})
-  ).sort((a, b) => (SOURCE_RANK[a[0]] ?? 9) - (SOURCE_RANK[b[0]] ?? 9))
+  const fmtH = (h: number) => { const r = Math.round(Math.abs(h)); if (r < 1) return '<1h'; if (r >= 24) return `${Math.round(r/24)}d`; return `${r}h` }
+  const showPartial = yMax >= 2, showCorr = yMax >= 6
 
-  const fmtH = (h: number) => {
-    const r = Math.round(Math.abs(h))
-    if (r < 1) return '< 1h'
-    if (r >= 24) return `${Math.round(r / 24)}d`
-    return `${r}h`
-  }
+  const byType = Object.entries(sorted.reduce((acc: Record<string, number>, r) => { acc[r.sourceType] = (acc[r.sourceType] ?? 0) + 1; return acc }, {}))
+    .sort((a, b) => (SOURCE_RANK[a[0]] ?? 9) - (SOURCE_RANK[b[0]] ?? 9))
+
   const stats = [
-    { label: 'Final score', value: `${finalScore.toFixed(1)} / 10`, color: finalScore >= 6 ? '#1a6b4a' : finalScore >= 2 ? '#888680' : '#c8472a' },
+    { label: 'Score', value: `${finalScore.toFixed(1)}/10`, color: finalScore >= 6 ? '#1a6b4a' : finalScore >= 2 ? '#888680' : '#c8472a' },
     { label: 'Sources', value: String(sorted.length), color: '#0f0f0e' },
-    { label: 'Time span', value: fmtH(timeSpan), color: '#888680' },
-    { label: corrHitH !== null ? 'Corroborated at' : 'Status', value: corrHitH !== null ? (corrHitH >= 0 ? `+${fmtH(corrHitH)}` : `-${fmtH(corrHitH)}`) : 'Not yet', color: corrHitH !== null ? '#1a6b4a' : '#c8472a' },
+    { label: 'Span', value: fmtH(timeSpan), color: '#888680' },
+    { label: corrHitH !== null ? 'Corr. at' : 'Status', value: corrHitH !== null ? (corrHitH >= 0 ? `+${fmtH(corrHitH)}` : fmtH(corrHitH)) : 'Not yet', color: corrHitH !== null ? '#1a6b4a' : '#c8472a' },
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <ChartHeader title="Corroboration buildup" sub="Cumulative score as independent sources accumulate. Each step is a new source." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Corroboration buildup</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {showCorr && <rect x={pL} y={pT} width={plotW} height={yS(6) - pT} fill="rgba(26,107,74,0.04)" />}
-        <line x1={pL} y1={H - pB} x2={W - pR} y2={H - pB} stroke="#edeae3" strokeWidth="1" />
-        {showPartial && <line x1={pL} y1={yS(2)} x2={W - pR} y2={yS(2)} stroke="#888680" strokeWidth="0.75" strokeDasharray="4,4" />}
-        {showCorr && <line x1={pL} y1={yS(6)} x2={W - pR} y2={yS(6)} stroke="#1a6b4a" strokeWidth="0.75" strokeDasharray="4,4" />}
-        <line x1={x0} y1={pT} x2={x0} y2={H - pB} stroke="#c8472a" strokeWidth="1" strokeDasharray="4,3" />
-        <text x={x0} y={pT - 8} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>source</text>
-        <path d={fill} fill="#0f0f0e" opacity="0.05" />
-        <path d={d} fill="none" stroke="#0f0f0e" strokeWidth="2" strokeLinejoin="round" />
-        {showPartial && (
-          <>
-            <rect x={pL} y={yS(2) - 14} width={58} height={16} fill="#f7f4ef" />
-            <text x={pL + 4} y={yS(2) - 3} fontSize="10" fill="#888680" fontFamily={MONO}>partial</text>
-          </>
-        )}
-        {showCorr && (
-          <>
-            <rect x={pL} y={yS(6) - 14} width={86} height={16} fill="#f7f4ef" />
-            <text x={pL + 4} y={yS(6) - 3} fontSize="10" fill="#1a6b4a" fontFamily={MONO} fontWeight="600">corroborated</text>
-          </>
-        )}
-        {showPartial && <text x={pL - 6} y={yS(2) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>2</text>}
-        {showCorr && <text x={pL - 6} y={yS(6) + 4} textAnchor="end" fontSize="10" fill="#1a6b4a" fontFamily={MONO}>6</text>}
-        <text x={pL - 6} y={yS(0) + 4} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>0</text>
-        <text x={pL} y={H - 10} textAnchor="middle" fontSize="10" fill="#888680" fontFamily={MONO}>−48h</text>
-        <text x={x0} y={H - 10} textAnchor="middle" fontSize="10" fill="#c8472a" fontFamily={MONO}>0</text>
-        <text x={W - pR} y={H - 10} textAnchor="end" fontSize="10" fill="#888680" fontFamily={MONO}>+48h</text>
+        <line x1={pL} y1={chartBottom} x2={400 - pR} y2={chartBottom} stroke="#d4d0c8" strokeWidth="0.75" />
+        {showPartial && <line x1={pL} y1={yS(2)} x2={400 - pR} y2={yS(2)} stroke="#d4d0c8" strokeWidth="0.5" strokeDasharray="3,3" />}
+        {showCorr && <line x1={pL} y1={yS(6)} x2={400 - pR} y2={yS(6)} stroke="#1a6b4a" strokeWidth="0.5" strokeDasharray="3,3" />}
+        <line x1={x0} y1={pT} x2={x0} y2={chartBottom} stroke="#c8472a" strokeWidth="0.75" strokeDasharray="3,3" />
+        {showPartial && <text x={pL - 4} y={yS(2) + 3} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>2</text>}
+        {showCorr && <text x={pL - 4} y={yS(6) + 3} textAnchor="end" fontSize="8" fill="#1a6b4a" fontFamily={MONO}>6</text>}
+        <text x={pL - 4} y={chartBottom + 3} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>0</text>
+        <text x={pL} y={chartBottom + 14} fontSize="8" fill="#888680" fontFamily={MONO}>−48h</text>
+        <text x={x0} y={chartBottom + 14} textAnchor="middle" fontSize="8" fill="#c8472a" fontFamily={MONO}>0</text>
+        <text x={400 - pR} y={chartBottom + 14} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>+48h</text>
+        <path d={fillPath} fill="#0f0f0e" opacity="0.05" />
+        <path d={d} fill="none" stroke="#0f0f0e" strokeWidth="1.5" strokeLinejoin="round" />
         {events.map(({ h, score, r }, i) => (
-          <circle key={i} cx={xS(h)} cy={yS(score)} r={6}
-            fill={SOURCE_COLORS[r.sourceType as keyof typeof SOURCE_COLORS] ?? '#888680'}
-            stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
-            onMouseEnter={e => show(e, [
-              r.channel,
-              `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[r.sourceType as keyof typeof SOURCE_LABELS]} · +${SOURCE_WEIGHTS[r.sourceType]}pts`,
-              `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source · score → ${score.toFixed(1)}`,
-            ])}
-            onMouseMove={move} onMouseLeave={hide}
-          />
+          <circle key={i} cx={xS(h)} cy={yS(score)} r={5}
+            fill={SOURCE_COLORS[r.sourceType] ?? '#888680'} stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
+            onMouseEnter={e => show(e, [r.channel, `${SOURCE_LABELS[r.sourceType]} · +${SOURCE_WEIGHTS[r.sourceType]}pts`, `${r.hoursAfterSource >= 0 ? '+' : ''}${r.hoursAfterSource}h → score ${score.toFixed(1)}`])}
+            onMouseMove={move} onMouseLeave={hide} />
         ))}
+        <line x1="20" y1="228" x2="380" y2="228" stroke="#edeae3" strokeWidth="0.75" />
+        {stats.map((s, i) => {
+          const cx = 24 + (i % 2) * 190, cy = 238 + Math.floor(i / 2) * 54
+          return (
+            <g key={i}>
+              <text x={cx} y={cy + 9} fontSize="8" fontFamily={MONO} fill="#888680" letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>{s.label}</text>
+              <text x={cx} y={cy + 26} fontSize="15" fontFamily={MONO} fontWeight="700" fill={s.color}>{s.value}</text>
+            </g>
+          )
+        })}
+        <line x1="20" y1="352" x2="380" y2="352" stroke="#edeae3" strokeWidth="0.75" />
+        {byType.map(([type, count], i) => {
+          const bx = 24 + i * 70; if (bx > 350) return null
+          const color = SOURCE_COLORS[type as keyof typeof SOURCE_COLORS] ?? '#888680'
+          return (
+            <g key={type}>
+              <circle cx={bx + 4} cy={370} r={3.5} fill={color} />
+              <text x={bx + 12} y={374} fontSize="9" fontFamily={MONO} fill="#555452">{SOURCE_LABELS_SHORT[type] ?? type} {count}</text>
+            </g>
+          )
+        })}
       </svg>
-
-      {/* Data summary below chart */}
-      <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', borderTop: '1px solid #edeae3', padding: mobile ? '0 16px' : undefined }}>
-        {stats.map(s => (
-          <div key={s.label} style={{ padding: '12px 0', borderBottom: '1px solid #f0ede6' }}>
-            <div style={{ fontFamily: MONO, fontSize: '9px', color: '#888680', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{s.label}</div>
-            <div style={{ fontFamily: MONO, fontSize: '16px', fontWeight: 700, color: s.color }}>{s.value}</div>
-          </div>
-        ))}
-        {byType.map(([type, count]) => (
-          <div key={type} style={{ padding: '9px 0', borderBottom: '1px solid #f0ede6', display: 'grid', gridTemplateColumns: '10px 1fr 24px', gap: '8px', alignItems: 'center' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: SOURCE_COLORS[type as keyof typeof SOURCE_COLORS] ?? '#888680' }} />
-            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#0f0f0e' }}>{SOURCE_LABELS[type as keyof typeof SOURCE_LABELS] ?? type}</span>
-            <span style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', textAlign: 'right' }}>{count}</span>
-          </div>
-        ))}
-      </div>
-
       <ChartTooltip tip={tip} />
     </div>
   )
@@ -228,66 +200,52 @@ function SwimLanes({ results }: { results: any[] }) {
   const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
   const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
   const hide = () => setTip(null)
-  const mobile = useMobile()
 
-  const W = 620, laneH = 52, pL = mobile ? 68 : 110, pR = 24, pT = 16, pB = 36
-  const xMin = -48, xMax = 48, plotW = W - pL - pR
   const allLanes = ['agency', 'major', 'independent', 'unverified', 'raw', 'secondary', 'aggregated'] as const
   const lanes = allLanes.filter(l => results.some(r => r.sourceType === l))
-  const totalH = pT + lanes.length * laneH + pB
+  const pL = 82, pR = 12, pT = 38, pB = 36
+  const plotW = 400 - pL - pR
+  const availH = 400 - pT - pB
+  const laneH = Math.min(50, availH / Math.max(lanes.length, 1))
+  const totalLanesH = lanes.length * laneH
+  const lanesTop = pT + (availH - totalLanesH) / 2
+  const xMin = -48, xMax = 48
   const xS = (h: number) => pL + ((Math.max(xMin, Math.min(xMax, h)) - xMin) / (xMax - xMin)) * plotW
   const x0 = xS(0)
-
-  // Tick marks every 12h
-  const ticks = [-48, -36, -24, -12, 0, 12, 24, 36, 48]
+  const ticks = [-48, -24, 0, 24, 48]
+  const xAxisY = lanesTop + totalLanesH + 16
 
   return (
-    <div style={{}}>
-      <ChartHeader title="Source independence × time" sub="Each dot is a source positioned by upload time. Raw footage and news agencies before the red line are the strongest corroboration signals." />
-      <svg viewBox={`0 0 ${W} ${totalH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        {/* vertical tick grid */}
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Source independence × time</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {ticks.map(t => (
-          <line key={t} x1={xS(t)} y1={pT} x2={xS(t)} y2={totalH - pB} stroke={t === 0 ? 'rgba(200,71,42,0.15)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
+          <line key={t} x1={xS(t)} y1={lanesTop} x2={xS(t)} y2={lanesTop + totalLanesH}
+            stroke={t === 0 ? 'rgba(200,71,42,0.18)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
         ))}
-        {/* lanes */}
         {lanes.map((lane, li) => {
-          const y = pT + li * laneH
+          const y = lanesTop + li * laneH
           const laneResults = results.filter(r => r.sourceType === lane)
-          const count = laneResults.length
+          const color = SOURCE_COLORS[lane]
           return (
             <g key={lane}>
-              <rect x={pL} y={y + 8} width={plotW} height={laneH - 18} fill={li % 2 === 0 ? '#f7f4ef' : '#f2efe9'} rx="2" />
-              {/* lane label + count */}
-              <text x={pL - 6} y={y + laneH / 2 - 5} textAnchor="end" fontSize={mobile ? 9 : 11} fill={SOURCE_COLORS[lane]} fontFamily={MONO} fontWeight="600">{mobile ? SOURCE_LABELS_SHORT[lane] : SOURCE_LABELS[lane]}</text>
-              <text x={pL - 6} y={y + laneH / 2 + 9} textAnchor="end" fontSize={mobile ? 8 : 10} fill="#888680" fontFamily={MONO}>{count}x</text>
-              {/* dots */}
+              <rect x={pL} y={y + 4} width={plotW} height={laneH - 8} fill={li % 2 === 0 ? 'rgba(0,0,0,0.015)' : 'transparent'} />
+              <text x={pL - 6} y={y + laneH / 2 - 4} textAnchor="end" fontSize="9" fill={color} fontFamily={MONO} fontWeight="600" style={{ textTransform: 'uppercase' }}>{SOURCE_LABELS_SHORT[lane]}</text>
+              <text x={pL - 6} y={y + laneH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{laneResults.length}×</text>
               {laneResults.map((r, i) => (
-                <circle
-                  key={i}
-                  cx={xS(r.hoursAfterSource)} cy={y + laneH / 2}
-                  r={7}
-                  fill={SOURCE_COLORS[lane]}
-                  opacity={0.88}
-                  stroke="#f7f4ef" strokeWidth="1.5"
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={e => show(e, [
-                    r.channel,
-                    `${PLATFORM_LABELS[r.platform] ?? 'YouTube'} · ${SOURCE_LABELS[lane as keyof typeof SOURCE_LABELS]}`,
-                    `${r.hoursAfterSource > 0 ? '+' : ''}${r.hoursAfterSource}h from source`,
-                  ])}
-                  onMouseMove={move}
-                  onMouseLeave={hide}
-                />
+                <circle key={i} cx={xS(r.hoursAfterSource)} cy={y + laneH / 2}
+                  r={6} fill={color} opacity={0.9} stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
+                  onMouseEnter={e => show(e, [r.channel, `${SOURCE_LABELS[lane]} · ${r.hoursAfterSource >= 0 ? '+' : ''}${r.hoursAfterSource}h`])}
+                  onMouseMove={move} onMouseLeave={hide} />
               ))}
             </g>
           )
         })}
-        {/* source line on top */}
-        <line x1={x0} y1={pT} x2={x0} y2={totalH - pB} stroke="#c8472a" strokeWidth="1.5" strokeDasharray="4,3" />
-        {/* x axis */}
-        <line x1={pL} y1={totalH - pB} x2={W - pR} y2={totalH - pB} stroke="#edeae3" strokeWidth="1" />
+        <line x1={x0} y1={lanesTop} x2={x0} y2={lanesTop + totalLanesH} stroke="#c8472a" strokeWidth="1.5" strokeDasharray="3,3" />
+        <line x1={pL} y1={lanesTop + totalLanesH + 2} x2={400 - pR} y2={lanesTop + totalLanesH + 2} stroke="#d4d0c8" strokeWidth="0.75" />
         {ticks.map(t => (
-          <text key={t} x={xS(t)} y={totalH - pB + 16} textAnchor="middle" fontSize="10" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
+          <text key={t} x={xS(t)} y={xAxisY} textAnchor="middle" fontSize="8" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
             {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t}h`}
           </text>
         ))}
@@ -308,31 +266,33 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
   const credGate = 0.10 + (aiScores.credibility / 10) * 0.90
   const afterGate = Math.min(afterOutrage * credGate, 10)
   const final = Math.min(corroborationScore, 10)
-
   const steps = [
-    { label: 'Raw coverage', value: rawScore, color: '#555452', desc: 'Sum of source weights' },
+    { label: 'Raw coverage', value: rawScore, color: '#555452', desc: `${results.length} sources weighted` },
     { label: 'After outrage', value: afterOutrage, color: aiScores.outrage >= 6 ? '#c8472a' : '#888680', desc: `Outrage ${aiScores.outrage}/10 → ×${outrMult.toFixed(2)}` },
     { label: 'After credibility', value: afterGate, color: aiScores.credibility >= 6 ? '#1a6b4a' : '#c8472a', desc: `Credibility ${aiScores.credibility}/10 → ×${credGate.toFixed(2)}` },
     { label: 'Final score', value: final, color: '#0f0f0e', desc: 'Capped at 10' },
   ]
   const max = Math.max(...steps.map(s => s.value), 0.1)
-  const W = 500, barL = 144, barR = 432, barW = barR - barL, rowH = 48, pT = 8, H = pT + steps.length * rowH
+  const pT = 38, rowH = 86, barL = 160, barR = 362, barW = barR - barL
 
   return (
-    <div>
-      <ChartHeader title="Score waterfall" sub="How the final score is constructed — each step shows penalties applied." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Score waterfall</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {steps.map((s, i) => {
           const y = pT + i * rowH
           const bw = (s.value / max) * barW
           const isFinal = i === steps.length - 1
+          const midY = y + rowH / 2
           return (
             <g key={i}>
-              <text x={barL - 8} y={y + 13} textAnchor="end" fontSize="10" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</text>
-              <text x={barL - 8} y={y + 25} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{s.desc}</text>
-              <rect x={barL} y={y} width={barW} height={22} fill="#f0ede6" />
-              <rect x={barL} y={y} width={bw} height={22} fill={s.color} opacity={isFinal ? 1 : 0.7} />
-              <text x={barR + 10} y={y + 15} textAnchor="start" fontSize="12" fontWeight="700" fill={s.color} fontFamily={MONO}>{s.value.toFixed(1)}</text>
+              <line x1="20" y1={y + rowH} x2="390" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <text x={barL - 8} y={midY - 7} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</text>
+              <text x={barL - 8} y={midY + 7} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{s.desc}</text>
+              <rect x={barL} y={midY - 11} width={barW} height={22} fill="#f0ede6" />
+              <rect x={barL} y={midY - 11} width={bw} height={22} fill={s.color} opacity={isFinal ? 1 : 0.72} />
+              <text x={barR + 8} y={midY + 5} fontSize="14" fontWeight="700" fill={s.color} fontFamily={MONO}>{s.value.toFixed(1)}</text>
             </g>
           )
         })}
@@ -348,54 +308,54 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
   unverifiedRatio: number; aiAnalysisAvailable: boolean; corroborationScore: number
 }) {
   const flags: { label: string; detail: string; severity: 'high'|'medium'|'low' }[] = []
-
-  if (aiScores.outrage >= 8) flags.push({ label: 'Extreme outrage signal', detail: `Outrage score ${aiScores.outrage}/10 — content is highly emotionally manipulative`, severity: 'high' })
-  else if (aiScores.outrage >= 6) flags.push({ label: 'Elevated outrage', detail: `Outrage score ${aiScores.outrage}/10 — emotional framing may distort the story`, severity: 'medium' })
-  if (aiScores.credibility <= 2) flags.push({ label: 'Claim likely false', detail: `Credibility ${aiScores.credibility}/10 — core facts appear fabricated or misrepresented`, severity: 'high' })
-  else if (aiScores.credibility <= 4) flags.push({ label: 'Low credibility', detail: `Credibility ${aiScores.credibility}/10 — claim is poorly supported or misleadingly framed`, severity: 'medium' })
-  if (unverifiedRatio > 0.7) flags.push({ label: 'Mostly unverified sources', detail: `${Math.round(unverifiedRatio * 100)}% of sources are from unknown/unverified channels`, severity: 'medium' })
-  if (!results.some(r => r.sourceType === 'agency') && results.length > 0) flags.push({ label: 'No agency coverage', detail: 'No Reuters, AP, or AFP source found — not independently confirmed by wire services', severity: 'low' })
+  if (aiScores.outrage >= 8) flags.push({ label: 'Extreme outrage', detail: `Outrage ${aiScores.outrage}/10 — highly emotionally manipulative`, severity: 'high' })
+  else if (aiScores.outrage >= 6) flags.push({ label: 'Elevated outrage', detail: `Outrage ${aiScores.outrage}/10 — emotional framing may distort story`, severity: 'medium' })
+  if (aiScores.credibility <= 2) flags.push({ label: 'Claim likely false', detail: `Credibility ${aiScores.credibility}/10 — facts appear fabricated`, severity: 'high' })
+  else if (aiScores.credibility <= 4) flags.push({ label: 'Low credibility', detail: `Credibility ${aiScores.credibility}/10 — poorly supported`, severity: 'medium' })
+  if (unverifiedRatio > 0.7) flags.push({ label: 'Mostly unverified', detail: `${Math.round(unverifiedRatio * 100)}% from unknown channels`, severity: 'medium' })
+  if (!results.some(r => r.sourceType === 'agency') && results.length > 0) flags.push({ label: 'No agency coverage', detail: 'No Reuters, AP, or AFP found', severity: 'low' })
   const langs = new Set(results.map(r => r.language ?? 'undetected').filter(l => l !== 'undetected'))
-  if (langs.size === 1 && results.length >= 4) flags.push({ label: 'Single language only', detail: 'All sources in one language — no cross-border corroboration detected', severity: 'low' })
-  if (!aiAnalysisAvailable) flags.push({ label: 'AI analysis unavailable', detail: 'Scores are estimated defaults — Claude analysis did not complete', severity: 'low' })
-  if (aiScores.simplicity <= 3) flags.push({ label: 'Contradictory narratives', detail: `Consistency score ${aiScores.simplicity}/10 — sources tell conflicting stories`, severity: 'medium' })
+  if (langs.size === 1 && results.length >= 4) flags.push({ label: 'Single language only', detail: 'No cross-border corroboration detected', severity: 'low' })
+  if (!aiAnalysisAvailable) flags.push({ label: 'AI analysis unavailable', detail: 'Scores are estimated defaults', severity: 'low' })
+  if (aiScores.simplicity <= 3) flags.push({ label: 'Contradictory narratives', detail: `Consistency ${aiScores.simplicity}/10 — conflicting stories`, severity: 'medium' })
   flags.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
 
   const severityColor = (s: string) => s === 'high' ? '#c8472a' : s === 'medium' ? '#c8822a' : '#888680'
-  const severityBg = (s: string) => s === 'high' ? 'rgba(200,71,42,0.08)' : s === 'medium' ? 'rgba(200,130,42,0.08)' : 'rgba(0,0,0,0.03)'
   const truncate = (t: string, n: number) => t.length > n ? t.slice(0, n - 1) + '…' : t
-
-  const W = 500, pL = 12, rowH = 56, gap = 6, pT = 8
-  const noFlagsH = pT + 56
+  const pT = 38, pL = 16, pR = 16
 
   if (flags.length === 0) {
     return (
-      <div>
-        <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
-        <svg viewBox={`0 0 ${W} ${noFlagsH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-          <rect x={pL} y={pT} width={W - pL * 2} height={40} fill="rgba(26,107,74,0.08)" stroke="#1a6b4a" strokeWidth="1" />
-          <circle cx={pL + 20} cy={pT + 20} r={5} fill="#1a6b4a" />
-          <text x={pL + 36} y={pT + 24} fontSize="12" fill="#1a6b4a" fontFamily={SANS}>No suspicious signals detected</text>
+      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+        <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+          <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Red flags</text>
+          <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+          <rect x={pL} y={pT + 12} width={400 - pL - pR} height={52} fill="rgba(26,107,74,0.08)" />
+          <rect x={pL} y={pT + 12} width={2.5} height={52} fill="#1a6b4a" />
+          <text x={pL + 16} y={pT + 43} fontSize="12" fill="#1a6b4a" fontFamily={SANS}>No suspicious signals detected</text>
         </svg>
       </div>
     )
   }
 
-  const H = pT + flags.length * (rowH + gap)
+  const availH = 400 - pT - 10
+  const rowH = Math.min(52, availH / flags.length)
+  const gap = Math.max(4, (availH - flags.length * rowH) / Math.max(flags.length - 1, 1))
+
   return (
-    <div>
-      <ChartHeader title="Red flags" sub="Automated detection of suspicious signals." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Red flags</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {flags.map((f, i) => {
           const y = pT + i * (rowH + gap)
           const col = severityColor(f.severity)
-          const line2 = truncate(f.detail, 68)
           return (
             <g key={i}>
-              <rect x={pL} y={y} width={W - pL * 2} height={rowH} fill={severityBg(f.severity)} stroke={col} strokeWidth="0.75" />
-              <circle cx={pL + 16} cy={y + 16} r={4} fill={col} />
-              <text x={pL + 28} y={y + 19} fontSize="10" fontWeight="700" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{f.label}</text>
-              <text x={pL + 28} y={y + 36} fontSize="11" fill="#555452" fontFamily={SANS}>{line2}</text>
+              <rect x={pL} y={y} width={400 - pL - pR} height={rowH} fill={col === '#c8472a' ? 'rgba(200,71,42,0.06)' : col === '#c8822a' ? 'rgba(200,130,42,0.06)' : 'rgba(0,0,0,0.025)'} />
+              <rect x={pL} y={y} width={2.5} height={rowH} fill={col} />
+              <text x={pL + 12} y={y + rowH * 0.4} fontSize="9" fontWeight="700" fill={col} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{truncate(f.label, 40)}</text>
+              <text x={pL + 12} y={y + rowH * 0.4 + 14} fontSize="10" fill="#555452" fontFamily={SANS}>{truncate(f.detail, 50)}</text>
             </g>
           )
         })}
@@ -411,82 +371,63 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
   const show = (e: React.MouseEvent, lines: string[]) => setTip({ x: e.clientX, y: e.clientY, lines })
   const move = (e: React.MouseEvent) => setTip(t => t ? { ...t, x: e.clientX, y: e.clientY } : null)
   const hide = () => setTip(null)
-
   if (results.length === 0) return null
 
   const totalScore = results.reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
-  const highTrustScore = results.filter(r => ['raw','agency'].includes(r.sourceType))
-    .reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
+  const highTrustScore = results.filter(r => ['raw','agency'].includes(r.sourceType)).reduce((s, r) => s + (SOURCE_WEIGHTS[r.sourceType] ?? 1), 0)
   const platforms = new Set(results.map(r => r.platform ?? 'youtube')).size
   const langs = new Set(results.map(r => r.language).filter((l: string) => l && l !== 'undetected')).size
   const hrs = results.map(r => r.hoursAfterSource)
   const spread = hrs.length > 1 ? Math.max(...hrs) - Math.min(...hrs) : 0
-  // outrage 0-10: lower is better → invert for radar (0 outrage = 1.0)
-  const outrageValue = (10 - (aiScores.outrage ?? 5)) / 10
-  // simplicity 0-10: higher = more consistent narrative = better
-  const simplicityValue = (aiScores.simplicity ?? 5) / 10
-
   const axes = [
-    { label: 'Purity', desc: `${Math.round(totalScore > 0 ? (highTrustScore/totalScore)*100 : 0)}% of score from agencies & raw footage`, value: totalScore > 0 ? highTrustScore / totalScore : 0 },
-    { label: 'Platforms', desc: `${platforms} of 3 platforms covered`, value: Math.min(platforms / 3, 1) },
-    { label: 'Languages', desc: `${langs} language${langs !== 1 ? 's' : ''} detected`, value: Math.min(langs / 5, 1) },
-    { label: 'Spread', desc: `${spread}h between earliest and latest`, value: Math.min(spread / 48, 1) },
-    { label: 'Objectivity', desc: `Outrage score ${aiScores.outrage ?? 5}/10 (lower = better)`, value: outrageValue },
-    { label: 'Consistency', desc: `Narrative consistency ${aiScores.simplicity ?? 5}/10`, value: simplicityValue },
+    { label: 'Purity', desc: `${Math.round(totalScore > 0 ? (highTrustScore/totalScore)*100 : 0)}% agencies & raw`, value: totalScore > 0 ? highTrustScore / totalScore : 0 },
+    { label: 'Platforms', desc: `${platforms} of 3 covered`, value: Math.min(platforms / 3, 1) },
+    { label: 'Languages', desc: `${langs} language${langs !== 1 ? 's' : ''}`, value: Math.min(langs / 5, 1) },
+    { label: 'Spread', desc: `${spread}h time span`, value: Math.min(spread / 48, 1) },
+    { label: 'Objectivity', desc: `Outrage ${aiScores.outrage ?? 5}/10`, value: (10 - (aiScores.outrage ?? 5)) / 10 },
+    { label: 'Consistency', desc: `Consistency ${aiScores.simplicity ?? 5}/10`, value: (aiScores.simplicity ?? 5) / 10 },
   ]
 
-  const N = 6, SIZE = 260, CX = 130, CY = 130, R = 88
+  const N = 6, CX = 200, CY = 218, R = 128
   const angle = (i: number) => (i / N) * Math.PI * 2 - Math.PI / 2
   const pt = (i: number, v: number): [number, number] => [CX + Math.cos(angle(i)) * R * v, CY + Math.sin(angle(i)) * R * v]
   const polyStr = (v: number) => Array.from({ length: N }, (_, i) => pt(i, v).join(',')).join(' ')
   const dataStr = axes.map((a, i) => pt(i, a.value).join(',')).join(' ')
 
-  const mobile = useMobile()
   return (
-    <div style={{}}>
-      <ChartHeader title="Corroboration profile" sub="Six-dimensional view of corroboration quality. Fuller polygon = stronger, more diverse, less emotionally loaded signal." />
-      <div style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', gap: mobile ? '16px' : '40px', alignItems: mobile ? 'stretch' : 'center', flexWrap: 'wrap', padding: mobile ? '0 16px' : undefined }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: mobile ? '100%' : 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
-          {[0.25, 0.5, 0.75, 1].map(level => (
-            <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 1 : 0.5} />
-          ))}
-          {Array.from({ length: N }, (_, i) => {
-            const [x, y] = pt(i, 1)
-            return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#edeae3" strokeWidth="0.5" />
-          })}
-          <polygon points={dataStr} fill="rgba(26,107,74,0.14)" stroke="#1a6b4a" strokeWidth="1.5" strokeLinejoin="round" />
-          {axes.map((a, i) => {
-            const [x, y] = pt(i, a.value)
-            return (
-              <circle key={i} cx={x} cy={y} r={4} fill="#1a6b4a" style={{ cursor: 'pointer' }}
-                onMouseEnter={e => show(e, [a.label, a.desc, `Score: ${Math.round(a.value * 100)}%`])}
-                onMouseMove={move} onMouseLeave={hide}
-              />
-            )
-          })}
-          {axes.map((a, i) => {
-            const ang = angle(i)
-            const lx = CX + Math.cos(ang) * (R + 18)
-            const ly = CY + Math.sin(ang) * (R + 18)
-            const anchor = Math.abs(Math.cos(ang)) < 0.15 ? 'middle' : Math.cos(ang) > 0 ? 'start' : 'end'
-            return <text key={i} x={lx} y={ly + 4} textAnchor={anchor} fontSize="10" fill="#888680" fontFamily={MONO}>{a.label}</text>
-          })}
-        </svg>
-        <div style={{ flex: 1, minWidth: '180px' }}>
-          {axes.map(a => (
-            <div key={a.label} style={{ padding: '9px 0', borderBottom: '1px solid #f0ede6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e' }}>{a.label}</span>
-                <span style={{ fontFamily: MONO, fontSize: '11px', color: '#1a6b4a', fontWeight: '600' }}>{Math.round(a.value * 100)}%</span>
-              </div>
-              <div style={{ height: '3px', background: '#f0ede6' }}>
-                <div style={{ height: '100%', width: `${a.value * 100}%`, background: '#1a6b4a', transition: 'width 0.5s ease' }} />
-              </div>
-              <div style={{ fontFamily: MONO, fontSize: '10px', color: '#888680', marginTop: '3px' }}>{a.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Corroboration profile</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        {[0.25, 0.5, 0.75, 1].map(level => (
+          <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 0.75 : 0.5} />
+        ))}
+        {Array.from({ length: N }, (_, i) => {
+          const [x, y] = pt(i, 1)
+          return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#edeae3" strokeWidth="0.5" />
+        })}
+        <polygon points={dataStr} fill="rgba(26,107,74,0.12)" stroke="#1a6b4a" strokeWidth="1.5" strokeLinejoin="round" />
+        {axes.map((a, i) => {
+          const [x, y] = pt(i, a.value)
+          return (
+            <circle key={i} cx={x} cy={y} r={4} fill="#1a6b4a" style={{ cursor: 'pointer' }}
+              onMouseEnter={e => show(e, [a.label, a.desc, `${Math.round(a.value * 100)}%`])}
+              onMouseMove={move} onMouseLeave={hide} />
+          )
+        })}
+        {axes.map((a, i) => {
+          const ang = angle(i)
+          const lx = CX + Math.cos(ang) * (R + 22)
+          const ly = CY + Math.sin(ang) * (R + 22)
+          const anchor = Math.abs(Math.cos(ang)) < 0.15 ? 'middle' : Math.cos(ang) > 0 ? 'start' : 'end'
+          return (
+            <g key={i}>
+              <text x={lx} y={ly + 4} textAnchor={anchor} fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase' }}>{a.label}</text>
+              <text x={lx} y={ly + 16} textAnchor={anchor} fontSize="9" fill="#1a6b4a" fontFamily={MONO} fontWeight="600">{Math.round(a.value * 100)}%</text>
+            </g>
+          )
+        })}
+      </svg>
       <ChartTooltip tip={tip} />
     </div>
   )
@@ -669,56 +610,70 @@ function GeoSpreadMap({ results }: { results: any[] }) {
   const maxCount = Math.max(...Object.values(langGroups).map(g => g.count), 1)
   const langCount = Object.keys(langGroups).length
 
+  // Map rect inside 400×400 square
+  const mX = 14, mY = 38, mW = 372, mH = 186
+  const sx = mW / MAP_W, sy = mH / MAP_H
+  const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
+
   return (
-    <div>
-      <ChartHeader title="Geographic spread" sub={`Coverage detected in ${langCount} language${langCount !== 1 ? 's' : ''}. Dot size = number of sources. Positions approximated from language.`} />
-      <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Geographic spread</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+
         {/* Ocean background */}
-        <rect x={0} y={0} width={MAP_W} height={MAP_H} fill="#f2efe9" />
+        <rect x={mX} y={mY} width={mW} height={mH} fill="#f2efe9" />
         {/* Graticule lines */}
         {[-60, -30, 0, 30, 60].map(lat => {
-          const y = (90 - lat) * MAP_H / 180
-          return <line key={`lat-${lat}`} x1={0} y1={y} x2={MAP_W} y2={y} stroke="#e8e4dc" strokeWidth={lat === 0 ? 1 : 0.5} />
+          const gy = mY + (90 - lat) * mH / 180
+          return <line key={`lat-${lat}`} x1={mX} y1={gy} x2={mX + mW} y2={gy} stroke="#e8e4dc" strokeWidth={lat === 0 ? 0.8 : 0.4} />
         })}
         {[-120, -60, 0, 60, 120].map(lng => {
-          const x = (lng + 180) * MAP_W / 360
-          return <line key={`lng-${lng}`} x1={x} y1={0} x2={x} y2={MAP_H} stroke="#e8e4dc" strokeWidth="0.5" />
+          const gx = mX + (lng + 180) * mW / 360
+          return <line key={`lng-${lng}`} x1={gx} y1={mY} x2={gx} y2={mY + mH} stroke="#e8e4dc" strokeWidth="0.4" />
         })}
-        {/* Continents */}
-        {WORLD_CONTINENTS.map(c => (
-          <path key={c.id} d={c.d} fill="#ddd9d0" stroke="#c8c4bc" strokeWidth="0.75" />
-        ))}
+        {/* Continents — scale from MAP_W×MAP_H space into mX,mY,mW,mH */}
+        <g transform={`translate(${mX},${mY}) scale(${sx},${sy})`}>
+          {WORLD_CONTINENTS.map(c => (
+            <path key={c.id} d={c.d} fill="#ddd9d0" stroke="#c8c4bc" strokeWidth={1 / Math.min(sx, sy)} />
+          ))}
+        </g>
         {/* Source dots by language */}
         {Object.entries(langGroups).map(([lang, g]) => {
           const coords = LANG_GEO[lang]
           if (!coords) return null
           const [lat, lng] = coords
-          const [sx, sy] = toMapXY(lat, lng)
-          const r = 5 + (g.count / maxCount) * 16
+          const [rawX, rawY] = toMapXY(lat, lng)
+          const cx = mX + rawX * sx
+          const cy = mY + rawY * sy
+          const r = 4 + (g.count / maxCount) * 12
           const typeCount: Record<string, number> = {}
           for (const t of g.types) typeCount[t] = (typeCount[t] || 0) + 1
           const dominantType = Object.entries(typeCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unverified'
           const color = SOURCE_COLORS[dominantType] ?? '#888680'
-          const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : String(n)
           return (
             <g key={lang}>
-              <circle cx={sx} cy={sy} r={r + 3} fill={color} opacity={0.15} />
-              <circle cx={sx} cy={sy} r={r} fill={color} opacity={0.75} stroke="white" strokeWidth="1"
+              <circle cx={cx} cy={cy} r={r + 3} fill={color} opacity={0.12} />
+              <circle cx={cx} cy={cy} r={r} fill={color} opacity={0.8} stroke="white" strokeWidth="0.75"
                 style={{ cursor: 'pointer' }}
                 onMouseEnter={e => show(e, [lang.toUpperCase(), `${g.count} source${g.count !== 1 ? 's' : ''}`, `${fmtV(g.views)} views`])}
                 onMouseMove={move} onMouseLeave={hide}
               />
-              {r >= 10 && (
-                <text x={sx} y={sy + 4} textAnchor="middle" fontSize="9" fill="white" fontFamily={MONO}
-                  style={{ pointerEvents: 'none', fontWeight: 700 }}>{lang}</text>
+              {r >= 9 && (
+                <text x={cx} y={cy + 3} textAnchor="middle" fontSize="7" fill="white" fontFamily={MONO}
+                  style={{ pointerEvents: 'none' }}>{lang}</text>
               )}
             </g>
           )
         })}
-        {/* Lat labels */}
-        {[60, 30, 0, -30, -60].map(lat => (
-          <text key={`llat-${lat}`} x={4} y={(90 - lat) * MAP_H / 180 + 4} fontSize="8" fill="#b0aca4" fontFamily={MONO}>{lat > 0 ? `${lat}°N` : lat < 0 ? `${-lat}°S` : '0°'}</text>
-        ))}
+
+        {/* Lang count label below map */}
+        <text x="20" y={mY + mH + 18} fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>
+          {`${langCount} language${langCount !== 1 ? 's' : ''} detected`}
+        </text>
+        <text x="20" y={mY + mH + 32} fontSize="8" fontFamily={MONO} fill="#b0aca4">
+          Dot size = number of sources · position approximated from language
+        </text>
       </svg>
       <ChartTooltip tip={tip} />
     </div>
@@ -748,13 +703,15 @@ function ReachByType({ results }: { results: any[] }) {
   const maxViews = Math.max(...entries.map(([, v]) => v.views), 1)
   const fmtV = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n/1000)}k` : n > 0 ? String(n) : '—'
 
-  const W = 500, pL = 148, barR = 418, barW = barR - pL, rowH = 46, pT = 8
-  const H = pT + entries.length * rowH + 8
+  const pT = 38, pL = 144, barR = 352, barW = barR - pL
+  const availH = 400 - pT - 8
+  const rowH = Math.min(48, Math.floor(availH / Math.max(entries.length, 1)))
 
   return (
-    <div>
-      <ChartHeader title="Audience reach" sub="Total estimated views per source tier. Shows which type drove the most exposure." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Audience reach</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {entries.map(([type, stats], i) => {
           const y = pT + i * rowH
           const bw = Math.max((stats.views / maxViews) * barW, stats.views > 0 ? 2 : 0)
@@ -765,14 +722,14 @@ function ReachByType({ results }: { results: any[] }) {
               onMouseEnter={e => show(e, [label, `${stats.count} source${stats.count !== 1 ? 's' : ''}`, `${fmtV(stats.views)} total views`])}
               onMouseMove={move} onMouseLeave={hide}
             >
-              <line x1={0} y1={y + rowH} x2={W} y2={y + rowH} stroke="#f0ede6" strokeWidth="0.5" />
-              <circle cx={10} cy={y + rowH / 2} r={4} fill={color} />
-              <text x={pL - 8} y={y + rowH / 2 - 5} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO}
+              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <circle cx={22} cy={y + rowH / 2} r={4} fill={color} />
+              <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="8" fill="#0f0f0e" fontFamily={MONO}
                 style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</text>
-              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{stats.count} src</text>
-              <rect x={pL} y={y + 10} width={barW} height={18} fill="#f0ede6" />
-              <rect x={pL} y={y + 10} width={bw} height={18} fill={color} opacity={0.8} />
-              <text x={barR + 10} y={y + rowH / 2 + 5} fontSize="12" fontWeight="700" fill={color} fontFamily={MONO}>{fmtV(stats.views)}</text>
+              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{stats.count} src</text>
+              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f0ede6" />
+              <rect x={pL} y={y + rowH / 2 - 8} width={bw} height={16} fill={color} opacity={0.82} />
+              <text x={barR + 8} y={y + rowH / 2 + 4} fontSize="11" fontWeight="700" fill={color} fontFamily={MONO}>{fmtV(stats.views)}</text>
             </g>
           )
         })}
@@ -809,13 +766,15 @@ function LangDistribution({ results }: { results: any[] }) {
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
   const maxCount = Math.max(...entries.map(([, c]) => c), 1)
 
-  const W = 500, pL = 120, barR = 390, barW = barR - pL, rowH = 42, pT = 8
-  const H = pT + entries.length * rowH + 8
+  const pT = 38, pL = 126, barR = 352, barW = barR - pL
+  const availH = 400 - pT - 8
+  const rowH = Math.min(46, Math.floor(availH / Math.max(entries.length, 1)))
 
   return (
-    <div>
-      <ChartHeader title="Language spread" sub="Number of sources per language. Multilingual coverage strengthens corroboration." />
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Language spread</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
         {entries.map(([lang, count], i) => {
           const y = pT + i * rowH
           const bw = Math.max((count / maxCount) * barW, 2)
@@ -825,13 +784,13 @@ function LangDistribution({ results }: { results: any[] }) {
               onMouseEnter={e => show(e, [LANG_NAMES[lang] ?? lang.toUpperCase(), `${count} source${count !== 1 ? 's' : ''}`, `${pct}% of total`])}
               onMouseMove={move} onMouseLeave={hide}
             >
-              <line x1={0} y1={y + rowH} x2={W} y2={y + rowH} stroke="#f0ede6" strokeWidth="0.5" />
-              <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO}
+              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="8" fill="#0f0f0e" fontFamily={MONO}
                 style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{LANG_NAMES[lang] ?? lang.toUpperCase()}</text>
-              <text x={pL - 8} y={y + rowH / 2 + 9} textAnchor="end" fontSize="9" fill="#888680" fontFamily={MONO}>{lang.toUpperCase()}</text>
-              <rect x={pL} y={y + 10} width={barW} height={16} fill="#f0ede6" />
-              <rect x={pL} y={y + 10} width={bw} height={16} fill="#0f0f0e" opacity={0.75} />
-              <text x={barR + 10} y={y + rowH / 2 + 5} fontSize="12" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{count}</text>
+              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{lang.toUpperCase()} · {pct}%</text>
+              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f0ede6" />
+              <rect x={pL} y={y + rowH / 2 - 8} width={bw} height={16} fill="#0f0f0e" opacity={0.75} />
+              <text x={barR + 8} y={y + rowH / 2 + 4} fontSize="11" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{count}</text>
             </g>
           )
         })}
@@ -860,7 +819,7 @@ function UploadClock({ results }: { results: any[] }) {
   }
   const maxCount = Math.max(...counts, 1)
 
-  const SIZE = 260, CX = 130, CY = 130, R_IN = 38, R_OUT = 110
+  const CX = 200, CY = 208, R_IN = 44, R_OUT = 148
   const hourAngle = (h: number) => (h / 24) * Math.PI * 2 - Math.PI / 2
   const GAP = 0.04
 
@@ -880,66 +839,61 @@ function UploadClock({ results }: { results: any[] }) {
     ].join(' ')
   }
 
-  // Spread metric: how many distinct hours have uploads
   const activeHours = counts.filter(c => c > 0).length
-  const clockLabels = [0, 6, 12, 18]
+  const peakHour = counts.indexOf(maxCount)
+  const spreadLabel = activeHours <= 3
+    ? 'Tightly clustered — possible coordination'
+    : activeHours <= 8
+    ? 'Moderate spread — breaking event'
+    : 'Wide spread — organic discovery'
 
-  const mobile = useMobile()
   return (
-    <div style={{}}>
-      <ChartHeader title="Upload clock" sub="Hour of day (UTC) when each source was uploaded. Clustered bars may indicate scheduled or coordinated activity." />
-      <div style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', gap: mobile ? '16px' : '48px', alignItems: mobile ? 'stretch' : 'center', flexWrap: 'wrap', padding: mobile ? '0 16px' : undefined }}>
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ width: mobile ? '100%' : 'min(220px, 100%)', height: 'auto', flexShrink: 0 }}>
-          {/* Inner circle */}
-          <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="1" />
-          {/* Outer ring guide */}
-          <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke="#edeae3" strokeWidth="0.5" strokeDasharray="2,4" />
-          {/* Hour arcs */}
-          {Array.from({ length: 24 }, (_, h) => {
-            const path = arcPath(h, counts[h])
-            if (!path) return null
-            return (
-              <path key={h} d={path}
-                fill={counts[h] === maxCount ? '#0f0f0e' : '#3a3a38'}
-                opacity={0.6 + (counts[h] / maxCount) * 0.4}
-                style={{ cursor: 'pointer' }}
-                onMouseEnter={e => show(e, [
-                  `${String(h).padStart(2, '0')}:00 UTC`,
-                  `${counts[h]} source${counts[h] !== 1 ? 's' : ''}`,
-                  ...byHour[h].slice(0, 3),
-                  byHour[h].length > 3 ? `+${byHour[h].length - 3} more` : '',
-                ].filter(Boolean))}
-                onMouseMove={move} onMouseLeave={hide}
-              />
-            )
-          })}
-          {/* Clock labels */}
-          {clockLabels.map(h => {
-            const ang = hourAngle(h)
-            const lx = CX + Math.cos(ang) * (R_OUT + 14)
-            const ly = CY + Math.sin(ang) * (R_OUT + 14)
-            return <text key={h} x={lx} y={ly + 4} textAnchor="middle" fontSize="10" fill="#888680" fontFamily={MONO}>{h}h</text>
-          })}
-          {/* Center label */}
-          <text x={CX} y={CY - 4} textAnchor="middle" fontSize="11" fill="#0f0f0e" fontFamily={MONO} fontWeight="600">{activeHours}</text>
-          <text x={CX} y={CY + 10} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO}>hours</text>
-        </svg>
-        <div style={{ flex: 1, minWidth: '160px' }}>
-          <p style={{ fontFamily: MONO, fontSize: '11px', color: '#0f0f0e', marginBottom: '8px' }}>
-            Activity across <strong>{activeHours}</strong> of 24 hours (UTC)
-          </p>
-          <p style={{ fontFamily: SANS, fontSize: '13px', color: '#888680', lineHeight: 1.6 }}>
-            {activeHours <= 3
-              ? 'Uploads are tightly clustered. This may indicate coordinated posting or a very short-lived event.'
-              : activeHours <= 8
-              ? 'Moderate spread. Consistent with organic coverage of a breaking event over several hours.'
-              : 'Wide spread across the day. Strong signal of organic, independent discovery by different people in different time zones.'}
-          </p>
-          <div style={{ marginTop: '16px', fontFamily: MONO, fontSize: '10px', color: '#888680' }}>
-            Peak hour: {String(counts.indexOf(maxCount)).padStart(2,'0')}:00 UTC ({maxCount} source{maxCount !== 1 ? 's' : ''})
-          </div>
-        </div>
-      </div>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
+        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Upload clock</text>
+        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+
+        {/* Inner/outer guide circles */}
+        <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="0.75" />
+        <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke="#edeae3" strokeWidth="0.5" strokeDasharray="2,4" />
+
+        {/* Hour arcs */}
+        {Array.from({ length: 24 }, (_, h) => {
+          const path = arcPath(h, counts[h])
+          if (!path) return null
+          return (
+            <path key={h} d={path}
+              fill={counts[h] === maxCount ? '#0f0f0e' : '#3a3a38'}
+              opacity={0.55 + (counts[h] / maxCount) * 0.45}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={e => show(e, [
+                `${String(h).padStart(2, '0')}:00 UTC`,
+                `${counts[h]} source${counts[h] !== 1 ? 's' : ''}`,
+                ...byHour[h].slice(0, 3),
+                byHour[h].length > 3 ? `+${byHour[h].length - 3} more` : '',
+              ].filter(Boolean))}
+              onMouseMove={move} onMouseLeave={hide}
+            />
+          )
+        })}
+
+        {/* Clock labels: 0h 6h 12h 18h */}
+        {[0, 6, 12, 18].map(h => {
+          const ang = hourAngle(h)
+          const lx = CX + Math.cos(ang) * (R_OUT + 16)
+          const ly = CY + Math.sin(ang) * (R_OUT + 16)
+          return <text key={h} x={lx} y={ly + 4} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO}>{h}h</text>
+        })}
+
+        {/* Center: active hours count */}
+        <text x={CX} y={CY - 6} textAnchor="middle" fontSize="22" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{activeHours}</text>
+        <text x={CX} y={CY + 10} textAnchor="middle" fontSize="8" fill="#888680" fontFamily={MONO} letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>hrs active</text>
+
+        {/* Stats row at bottom */}
+        <line x1="20" y1="366" x2="380" y2="366" stroke="#edeae3" strokeWidth="0.5" />
+        <text x="20" y="382" fontSize="8" fontFamily={MONO} fill="#888680" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>{spreadLabel}</text>
+        <text x="380" y="382" textAnchor="end" fontSize="8" fontFamily={MONO} fill="#b0aca4">Peak {String(peakHour).padStart(2,'0')}:00 UTC · {maxCount} src</text>
+      </svg>
       <ChartTooltip tip={tip} />
     </div>
   )
