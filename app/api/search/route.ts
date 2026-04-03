@@ -705,16 +705,20 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
           return total + unverifiedTotal
         })()
 
-        // Credibility gate: a story covered by many low-credibility sources
-        // (clickbait, speculation, entertainment) should not score high.
-        // credibilityScore (1–10) from AI scales the raw coverage score down.
+        // Credibility gate: when sources contradict the claim, credibilityScore drops sharply.
+        // For contradicted claims: credibilityScore ≤ 3, and we cap the final score accordingly.
+        // For unchallenged claims: credibilityScore ≥ 5, normal weighted scoring applies.
         // Linear credibility gate: maps credibilityScore 0–10 → multiplier 0.1–1.0
-        // credibility=0  → 0.10 (nearly zero — claim is false/fabricated)
+        // credibility=0  → 0.10 (nearly zero — claim is false/contradicted by authorities)
+        // credibility=3  → 0.37 (contradicted by credible sources)
         // credibility=5  → 0.55 (unverified — half weight)
         // credibility=10 → 1.00 (fully confirmed — no penalty)
         const credibilityGate = 0.10 + (credibilityScore / 10) * 0.90
 
-        const finalCorroborationScore = Math.min(credibilityWeightedScore * credibilityGate, 10)
+        // If credibilityScore is very low (contradicted), hard-cap the score
+        const finalCorroborationScore = credibilityScore <= 3
+          ? Math.min(credibilityScore * 1.5, 4)  // Contradicted claims max out at 4, scaled by credibilityScore
+          : Math.min(credibilityWeightedScore * credibilityGate, 10)
 
         send({
           result: {
