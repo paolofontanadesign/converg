@@ -142,7 +142,6 @@ function CorroborationBuildup({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Corroboration buildup</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {showCorr && <rect x={pL} y={pT} width={plotW} height={yS(6) - pT} fill="rgba(26,107,74,0.04)" />}
         <line x1={pL} y1={chartBottom} x2={400 - pR} y2={chartBottom} stroke="#e2e8f0" strokeWidth="0.75" />
         {showPartial && <line x1={pL} y1={yS(2)} x2={400 - pR} y2={yS(2)} stroke="#e2e8f0" strokeWidth="0.5" strokeDasharray="3,3" />}
@@ -219,7 +218,6 @@ function SwimLanes({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Source independence × time</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {ticks.map(t => (
           <line key={t} x1={xS(t)} y1={lanesTop} x2={xS(t)} y2={lanesTop + totalLanesH}
             stroke={t === 0 ? 'rgba(200,71,42,0.18)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
@@ -281,7 +279,6 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Score waterfall</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {steps.map((s, i) => {
           const y = pT + i * rowH
           const bw = (s.value / max) * barW
@@ -331,8 +328,7 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
       <div style={{ width: '100%', height: '100%', position: 'relative' }}>
         <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
           <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Red flags</text>
-          <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
-          <rect x={pL} y={pT + 12} width={400 - pL - pR} height={52} fill="rgba(26,107,74,0.08)" />
+            <rect x={pL} y={pT + 12} width={400 - pL - pR} height={52} fill="rgba(26,107,74,0.08)" />
           <rect x={pL} y={pT + 12} width={2.5} height={52} fill="#1a6b4a" />
           <text x={pL + 16} y={pT + 43} fontSize="12" fill="#1a6b4a" fontFamily={SANS}>No suspicious signals detected</text>
         </svg>
@@ -348,7 +344,6 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Red flags</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {flags.map((f, i) => {
           const y = pT + i * (rowH + gap)
           const col = severityColor(f.severity)
@@ -400,7 +395,6 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Corroboration profile</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {[0.25, 0.5, 0.75, 1].map(level => (
           <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 0.75 : 0.5} />
         ))}
@@ -621,7 +615,6 @@ function GeoSpreadMap({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Geographic spread</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
 
         {/* Ocean background */}
         <rect x={mX} y={mY} width={mW} height={mH} fill="#eef2f7" />
@@ -713,7 +706,6 @@ function ReachByType({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Audience reach</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {entries.map(([type, stats], i) => {
           const y = pT + i * rowH
           const bw = Math.max((stats.views / maxViews) * barW, stats.views > 0 ? 2 : 0)
@@ -776,7 +768,6 @@ function LangDistribution({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Language spread</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {entries.map(([lang, count], i) => {
           const y = pT + i * rowH
           const bw = Math.max((count / maxCount) * barW, 2)
@@ -853,7 +844,6 @@ function UploadClock({ results }: { results: any[] }) {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
         <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Upload clock</text>
-        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
 
         {/* Inner/outer guide circles */}
         <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#f1f5f9" strokeWidth="0.75" />
@@ -1268,7 +1258,7 @@ export default function Home() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : '0 40px 80px' }}>
         <div style={{ width: '100%', maxWidth: '600px', textAlign: 'center' }}>
         <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
-          OSINT intelligence,{isMobile ? <br /> : ' '}simplified for the curious.
+          OSINT intelligence,{isMobile ? <br /> : ' '}simplified.
         </p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
@@ -1400,10 +1390,10 @@ export default function Home() {
 
       {/* ── Download charts ────────────────────────────────────────────────── */}
       {searched && !loading && results.length > 0 && (
-        <div style={{ padding: isMobile ? '20px' : '20px 0 0', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: 'flex' }}>
           <button
             onClick={downloadChartsSVG}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: '1px solid #0f0f0e', padding: '10px 20px', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: '#0f0f0e', cursor: 'pointer', justifyContent: 'center' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', borderTop: '1px solid #cbd5e1', padding: '14px 20px', fontFamily: MONO, fontSize: '11px', letterSpacing: '0.06em', color: '#0f0f0e', cursor: 'pointer', justifyContent: 'center', width: '100%' }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="#0f0f0e" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
