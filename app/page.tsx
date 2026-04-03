@@ -245,7 +245,9 @@ function SwimLanes({ results }: { results: any[] }) {
         <line x1={x0} y1={lanesTop} x2={x0} y2={lanesTop + totalLanesH} stroke="#c8472a" strokeWidth="1.5" strokeDasharray="3,3" />
         <line x1={pL} y1={lanesTop + totalLanesH + 2} x2={400 - pR} y2={lanesTop + totalLanesH + 2} stroke="#d4d0c8" strokeWidth="0.75" />
         {ticks.map(t => (
-          <text key={t} x={xS(t)} y={xAxisY} textAnchor="middle" fontSize="8" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
+          <text key={t} x={xS(t)} y={xAxisY}
+            textAnchor={t === -48 ? 'start' : t === 48 ? 'end' : 'middle'}
+            fontSize="8" fill={t === 0 ? '#c8472a' : '#888680'} fontFamily={MONO}>
             {t === 0 ? '0' : `${t > 0 ? '+' : ''}${t}h`}
           </text>
         ))}
@@ -273,7 +275,7 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
     { label: 'Final score', value: final, color: '#0f0f0e', desc: 'Capped at 10' },
   ]
   const max = Math.max(...steps.map(s => s.value), 0.1)
-  const pT = 38, rowH = 86, barL = 160, barR = 362, barW = barR - barL
+  const pT = 38, rowH = 86, barL = 160, barR = 340, barW = barR - barL
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -388,7 +390,7 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
     { label: 'Consistency', desc: `Consistency ${aiScores.simplicity ?? 5}/10`, value: (aiScores.simplicity ?? 5) / 10 },
   ]
 
-  const N = 6, CX = 200, CY = 218, R = 128
+  const N = 6, CX = 200, CY = 212, R = 112
   const angle = (i: number) => (i / N) * Math.PI * 2 - Math.PI / 2
   const pt = (i: number, v: number): [number, number] => [CX + Math.cos(angle(i)) * R * v, CY + Math.sin(angle(i)) * R * v]
   const polyStr = (v: number) => Array.from({ length: N }, (_, i) => pt(i, v).join(',')).join(' ')
@@ -417,8 +419,8 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
         })}
         {axes.map((a, i) => {
           const ang = angle(i)
-          const lx = CX + Math.cos(ang) * (R + 22)
-          const ly = CY + Math.sin(ang) * (R + 22)
+          const lx = CX + Math.cos(ang) * (R + 20)
+          const ly = CY + Math.sin(ang) * (R + 20)
           const anchor = Math.abs(Math.cos(ang)) < 0.15 ? 'middle' : Math.cos(ang) > 0 ? 'start' : 'end'
           return (
             <g key={i}>
@@ -1240,24 +1242,11 @@ export default function Home() {
   const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
 
   // Card wrapper for dashboard grid cells
-  const C = ({ children, span = 6, bg = '#f7f4ef', style, name, noSvg }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string; noSvg?: boolean }) => {
+  const C = ({ children, span = 6, bg = '#ffffff', accent, style, name }: { children: React.ReactNode; span?: number; bg?: string; accent?: string; style?: React.CSSProperties; name?: string }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     return (
-      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, aspectRatio: '1', position: 'relative', overflow: 'hidden', minWidth: 0, ...style }}>
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, aspectRatio: '1', position: 'relative', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box', borderTop: accent ? `4px solid ${accent}` : undefined, ...style }}>
         {children}
-        {name && !noSvg && (
-          <button
-            title={`Download ${name}`}
-            onClick={() => cellRef.current && downloadSingleChart(cellRef.current)}
-            style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.35, lineHeight: 1 }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '0.35')}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="#0f0f0e" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        )}
       </div>
     )
   }
@@ -1378,25 +1367,22 @@ export default function Home() {
 
           {results.length > 0 ? (
             <MobileCtx.Provider value={isMobile}>
-            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: '#d4d0c8' }}>
+            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '3px', background: '#0f0f0e' }}>
 
               {/* Row 1: buildup | profile | clock */}
-              <C span={hasUploadClock ? 1 : 2} name="corroboration-buildup"><CorroborationBuildup results={results} /></C>
-              <C span={1} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
-              {hasUploadClock && <C span={1} name="upload-clock"><UploadClock results={results} /></C>}
+              <C span={hasUploadClock ? 1 : 2} name="corroboration-buildup" accent="#1a6b4a"><CorroborationBuildup results={results} /></C>
+              <C span={1} name="corroboration-profile" accent="#3a5fa8"><DiversityRadar results={results} aiScores={aiScores} /></C>
+              {hasUploadClock && <C span={1} name="upload-clock" accent="#7a3a9a"><UploadClock results={results} /></C>}
 
               {/* Row 2: swim lanes | waterfall | red flags */}
-              <C span={1} name="swim-lanes"><SwimLanes results={results} /></C>
-              <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
-              <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
+              <C span={1} name="swim-lanes" accent="#b87a00"><SwimLanes results={results} /></C>
+              <C span={1} name="score-waterfall" accent="#555452"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
+              <C span={1} name="red-flags" accent="#c8472a"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
               {/* Row 3: geo spread | audience reach | language spread */}
-              <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
-              <C span={1} name="audience-reach"><ReachByType results={results} /></C>
-              <C span={1} name="lang-distribution"><LangDistribution results={results} /></C>
-
-              {/* Row 4: visual match — full width, conditional */}
-              {hasVisualScores && <C span={3} name="visual-match"><VisualMatchChart results={results} /></C>}
+              <C span={1} name="geo-spread" accent="#1a4a8a"><GeoSpreadMap results={results} /></C>
+              <C span={1} name="audience-reach" accent="#5a7a5a"><ReachByType results={results} /></C>
+              <C span={1} name="lang-distribution" accent="#8a3a5a"><LangDistribution results={results} /></C>
 
             </div>
             </MobileCtx.Provider>
