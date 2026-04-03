@@ -563,20 +563,12 @@ ${JSON.stringify(resultsWithTiming.slice(0, 20).map((r: any, i: number) => ({ i,
             credibilityScore = Math.max(0, credibilityScore - penalty)
           }
 
-          // Mark contradicting sources BEFORE filtering, so they're excluded from scoring
-          const markedResults = resultsWithTiming.map((r: any, i: number) => ({
-            ...r,
-            isContradicting: contradictingIndices.has(i),
-          }))
-
           // Remove off-topic AND contradicting results before vision scoring
           const excludedIndices = new Set([...irrelevantIndices, ...contradictingIndices])
           if (excludedIndices.size > 0) {
             resultsWithTiming.splice(0, resultsWithTiming.length,
-              ...markedResults.filter((_: any) => !_.isContradicting && !irrelevantIndices.has(resultsWithTiming.indexOf(_)))
+              ...resultsWithTiming.filter((_: any, i: number) => !excludedIndices.has(i))
             )
-          } else {
-            resultsWithTiming.splice(0, resultsWithTiming.length, ...markedResults)
           }
 
           // ── Step 4b: Vision scoring on the cleaned result set ─────────────
