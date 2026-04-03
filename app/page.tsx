@@ -1260,9 +1260,11 @@ export default function Home() {
         <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
           OSINT intelligence,{isMobile ? <br /> : ' '}simplified.
         </p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-          Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
-        </h1>
+        <div style={{ width: '100%', overflowX: 'auto', textAlign: 'center', marginBottom: '16px' }}>
+          <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', whiteSpace: 'nowrap', display: 'inline-block', padding: '0 10px' }}>
+            Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
+          </h1>
+        </div>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '40px' }}>
           Type a few words in any language or describe freely. Converg scores reliability using source diversity, timing and outrage signals.
         </p>
