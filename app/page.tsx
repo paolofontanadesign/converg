@@ -1256,7 +1256,7 @@ export default function Home() {
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : '0 40px 80px' }}>
-        <div style={{ width: '100%', maxWidth: '600px', textAlign: 'center' }}>
+        <div style={{ width: '100%', maxWidth: '800px', textAlign: 'center' }}>
         <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
           OSINT intelligence,{isMobile ? <br /> : ' '}simplified.
         </p>
