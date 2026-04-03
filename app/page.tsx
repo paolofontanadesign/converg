@@ -1262,11 +1262,11 @@ export default function Home() {
         </p>
         <div style={{ width: '100%', overflowX: 'auto', textAlign: 'center', marginBottom: '16px' }}>
           <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', whiteSpace: 'nowrap', display: 'inline-block', padding: '0 10px' }}>
-            Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
+            Real events leave{isMobile ? <br /> : ' '}<em style={{ color: '#3a3a38' }}>multiple</em> traces.
           </h1>
         </div>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '40px' }}>
-          Type a few words in any language or describe freely. Converg scores reliability using source diversity, timing and outrage signals.
+          Type a few words in any language. Converg scores reliability using source diversity, timing and outrage signals.
         </p>
         <div style={{ position: 'relative', marginBottom: '24px' }}>
           <div style={{ border: `1px solid ${loading ? '#888680' : '#0f0f0e'}`, background: 'white', display: 'flex', opacity: loading ? 0.6 : 1, transition: 'all 0.3s' }}>
