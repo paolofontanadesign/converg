@@ -1260,7 +1260,7 @@ export default function Home() {
         <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
           OSINT intelligence,{isMobile ? <br /> : ' '}simplified.
         </p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? '36px' : '48px', fontWeight: 400, lineHeight: 1.15, color: '#0f0f0e', marginBottom: '16px', whiteSpace: isMobile ? 'normal' : 'nowrap', textAlign: 'center' }}>
           Real events leave <em style={{ color: '#3a3a38' }}>multiple</em> traces.
         </h1>
         <p style={{ fontFamily: SANS, fontSize: '15px', color: '#3a3a38', lineHeight: 1.65, marginBottom: '40px' }}>
