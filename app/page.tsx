@@ -1212,9 +1212,6 @@ export default function Home() {
               setSearched(true)
               setLoading(false)
               setCurrentStep(-1)
-              setTimeout(() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-              }, 100)
             }
             if (data.error) {
               setError(data.error)
@@ -1258,7 +1255,7 @@ export default function Home() {
       </header>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : '0 40px 80px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: searched ? 'flex-start' : 'center', minHeight: searched ? 'auto' : 'calc(100vh - 61px)', padding: isMobile ? '40px 20px' : searched ? '20px 40px 40px' : '0 40px 80px' }}>
         <div style={{ width: '100%', maxWidth: '800px', textAlign: 'center' }}>
         <p style={{ fontFamily: MONO, fontSize: '13px', color: '#c8472a', marginBottom: '24px', letterSpacing: '0.06em' }}>
           OSINT intelligence,{isMobile ? <br /> : ' '}simplified.
