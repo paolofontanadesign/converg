@@ -141,45 +141,45 @@ function CorroborationBuildup({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Corroboration buildup</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Corroboration buildup</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {showCorr && <rect x={pL} y={pT} width={plotW} height={yS(6) - pT} fill="rgba(26,107,74,0.04)" />}
-        <line x1={pL} y1={chartBottom} x2={400 - pR} y2={chartBottom} stroke="#d4d0c8" strokeWidth="0.75" />
-        {showPartial && <line x1={pL} y1={yS(2)} x2={400 - pR} y2={yS(2)} stroke="#d4d0c8" strokeWidth="0.5" strokeDasharray="3,3" />}
+        <line x1={pL} y1={chartBottom} x2={400 - pR} y2={chartBottom} stroke="#e2e8f0" strokeWidth="0.75" />
+        {showPartial && <line x1={pL} y1={yS(2)} x2={400 - pR} y2={yS(2)} stroke="#e2e8f0" strokeWidth="0.5" strokeDasharray="3,3" />}
         {showCorr && <line x1={pL} y1={yS(6)} x2={400 - pR} y2={yS(6)} stroke="#1a6b4a" strokeWidth="0.5" strokeDasharray="3,3" />}
         <line x1={x0} y1={pT} x2={x0} y2={chartBottom} stroke="#c8472a" strokeWidth="0.75" strokeDasharray="3,3" />
-        {showPartial && <text x={pL - 4} y={yS(2) + 3} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>2</text>}
+        {showPartial && <text x={pL - 4} y={yS(2) + 3} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>2</text>}
         {showCorr && <text x={pL - 4} y={yS(6) + 3} textAnchor="end" fontSize="8" fill="#1a6b4a" fontFamily={MONO}>6</text>}
-        <text x={pL - 4} y={chartBottom + 3} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>0</text>
-        <text x={pL} y={chartBottom + 14} fontSize="8" fill="#888680" fontFamily={MONO}>−48h</text>
+        <text x={pL - 4} y={chartBottom + 3} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>0</text>
+        <text x={pL} y={chartBottom + 14} fontSize="8" fill="#64748b" fontFamily={MONO}>−48h</text>
         <text x={x0} y={chartBottom + 14} textAnchor="middle" fontSize="8" fill="#c8472a" fontFamily={MONO}>0</text>
-        <text x={400 - pR} y={chartBottom + 14} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>+48h</text>
-        <path d={fillPath} fill="#0f0f0e" opacity="0.05" />
-        <path d={d} fill="none" stroke="#0f0f0e" strokeWidth="1.5" strokeLinejoin="round" />
+        <text x={400 - pR} y={chartBottom + 14} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>+48h</text>
+        <path d={fillPath} fill="#1e40af" opacity="0.06" />
+        <path d={d} fill="none" stroke="#1e40af" strokeWidth="1.5" strokeLinejoin="round" />
         {events.map(({ h, score, r }, i) => (
           <circle key={i} cx={xS(h)} cy={yS(score)} r={5}
-            fill={SOURCE_COLORS[r.sourceType] ?? '#888680'} stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
+            fill={SOURCE_COLORS[r.sourceType] ?? '#888680'} stroke="#ffffff" strokeWidth="1.5" style={{ cursor: 'pointer' }}
             onMouseEnter={e => show(e, [r.channel, `${SOURCE_LABELS[r.sourceType]} · +${SOURCE_WEIGHTS[r.sourceType]}pts`, `${r.hoursAfterSource >= 0 ? '+' : ''}${r.hoursAfterSource}h → score ${score.toFixed(1)}`])}
             onMouseMove={move} onMouseLeave={hide} />
         ))}
-        <line x1="20" y1="228" x2="380" y2="228" stroke="#edeae3" strokeWidth="0.75" />
+        <line x1="20" y1="228" x2="380" y2="228" stroke="#f1f5f9" strokeWidth="0.75" />
         {stats.map((s, i) => {
           const cx = 24 + (i % 2) * 190, cy = 238 + Math.floor(i / 2) * 54
           return (
             <g key={i}>
-              <text x={cx} y={cy + 9} fontSize="8" fontFamily={MONO} fill="#888680" letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>{s.label}</text>
+              <text x={cx} y={cy + 9} fontSize="8" fontFamily={MONO} fill="#64748b" letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>{s.label}</text>
               <text x={cx} y={cy + 26} fontSize="15" fontFamily={MONO} fontWeight="700" fill={s.color}>{s.value}</text>
             </g>
           )
         })}
-        <line x1="20" y1="352" x2="380" y2="352" stroke="#edeae3" strokeWidth="0.75" />
+        <line x1="20" y1="352" x2="380" y2="352" stroke="#f1f5f9" strokeWidth="0.75" />
         {byType.map(([type, count], i) => {
           const bx = 24 + i * 70; if (bx > 350) return null
           const color = SOURCE_COLORS[type as keyof typeof SOURCE_COLORS] ?? '#888680'
           return (
             <g key={type}>
               <circle cx={bx + 4} cy={370} r={3.5} fill={color} />
-              <text x={bx + 12} y={374} fontSize="9" fontFamily={MONO} fill="#555452">{SOURCE_LABELS_SHORT[type] ?? type} {count}</text>
+              <text x={bx + 12} y={374} fontSize="9" fontFamily={MONO} fill="#475569">{SOURCE_LABELS_SHORT[type] ?? type} {count}</text>
             </g>
           )
         })}
@@ -218,8 +218,8 @@ function SwimLanes({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Source independence × time</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Source independence × time</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {ticks.map(t => (
           <line key={t} x1={xS(t)} y1={lanesTop} x2={xS(t)} y2={lanesTop + totalLanesH}
             stroke={t === 0 ? 'rgba(200,71,42,0.18)' : '#edeae3'} strokeWidth={t === 0 ? 1 : 0.5} />
@@ -230,12 +230,12 @@ function SwimLanes({ results }: { results: any[] }) {
           const color = SOURCE_COLORS[lane]
           return (
             <g key={lane}>
-              <rect x={pL} y={y + 4} width={plotW} height={laneH - 8} fill={li % 2 === 0 ? 'rgba(0,0,0,0.015)' : 'transparent'} />
+              <rect x={pL} y={y + 4} width={plotW} height={laneH - 8} fill={li % 2 === 0 ? 'rgba(30,64,175,0.04)' : 'transparent'} />
               <text x={pL - 6} y={y + laneH / 2 - 4} textAnchor="end" fontSize="9" fill={color} fontFamily={MONO} fontWeight="600" style={{ textTransform: 'uppercase' }}>{SOURCE_LABELS_SHORT[lane]}</text>
-              <text x={pL - 6} y={y + laneH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{laneResults.length}×</text>
+              <text x={pL - 6} y={y + laneH / 2 + 8} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>{laneResults.length}×</text>
               {laneResults.map((r, i) => (
                 <circle key={i} cx={xS(r.hoursAfterSource)} cy={y + laneH / 2}
-                  r={6} fill={color} opacity={0.9} stroke="#f7f4ef" strokeWidth="1.5" style={{ cursor: 'pointer' }}
+                  r={6} fill={color} opacity={0.9} stroke="#ffffff" strokeWidth="1.5" style={{ cursor: 'pointer' }}
                   onMouseEnter={e => show(e, [r.channel, `${SOURCE_LABELS[lane]} · ${r.hoursAfterSource >= 0 ? '+' : ''}${r.hoursAfterSource}h`])}
                   onMouseMove={move} onMouseLeave={hide} />
               ))}
@@ -243,7 +243,7 @@ function SwimLanes({ results }: { results: any[] }) {
           )
         })}
         <line x1={x0} y1={lanesTop} x2={x0} y2={lanesTop + totalLanesH} stroke="#c8472a" strokeWidth="1.5" strokeDasharray="3,3" />
-        <line x1={pL} y1={lanesTop + totalLanesH + 2} x2={400 - pR} y2={lanesTop + totalLanesH + 2} stroke="#d4d0c8" strokeWidth="0.75" />
+        <line x1={pL} y1={lanesTop + totalLanesH + 2} x2={400 - pR} y2={lanesTop + totalLanesH + 2} stroke="#e2e8f0" strokeWidth="0.75" />
         {ticks.map(t => (
           <text key={t} x={xS(t)} y={xAxisY}
             textAnchor={t === -48 ? 'start' : t === 48 ? 'end' : 'middle'}
@@ -272,7 +272,7 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
     { label: 'Raw coverage', value: rawScore, color: '#555452', desc: `${results.length} sources weighted` },
     { label: 'After outrage', value: afterOutrage, color: aiScores.outrage >= 6 ? '#c8472a' : '#888680', desc: `Outrage ${aiScores.outrage}/10 → ×${outrMult.toFixed(2)}` },
     { label: 'After credibility', value: afterGate, color: aiScores.credibility >= 6 ? '#1a6b4a' : '#c8472a', desc: `Credibility ${aiScores.credibility}/10 → ×${credGate.toFixed(2)}` },
-    { label: 'Final score', value: final, color: '#0f0f0e', desc: 'Capped at 10' },
+    { label: 'Final score', value: final, color: '#1e293b', desc: 'Capped at 10' },
   ]
   const max = Math.max(...steps.map(s => s.value), 0.1)
   const pT = 38, rowH = 86, barL = 160, barR = 340, barW = barR - barL
@@ -280,8 +280,8 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Score waterfall</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Score waterfall</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {steps.map((s, i) => {
           const y = pT + i * rowH
           const bw = (s.value / max) * barW
@@ -289,10 +289,10 @@ function ScoreWaterfall({ results, aiScores, corroborationScore }: {
           const midY = y + rowH / 2
           return (
             <g key={i}>
-              <line x1="20" y1={y + rowH} x2="390" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <line x1="20" y1={y + rowH} x2="390" y2={y + rowH} stroke="#f1f5f9" strokeWidth="0.5" />
               <text x={barL - 8} y={midY - 7} textAnchor="end" fontSize="9" fill="#0f0f0e" fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</text>
-              <text x={barL - 8} y={midY + 7} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{s.desc}</text>
-              <rect x={barL} y={midY - 11} width={barW} height={22} fill="#f0ede6" />
+              <text x={barL - 8} y={midY + 7} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>{s.desc}</text>
+              <rect x={barL} y={midY - 11} width={barW} height={22} fill="#f1f5f9" />
               <rect x={barL} y={midY - 11} width={bw} height={22} fill={s.color} opacity={isFinal ? 1 : 0.72} />
               <text x={barR + 8} y={midY + 5} fontSize="14" fontWeight="700" fill={s.color} fontFamily={MONO}>{s.value.toFixed(1)}</text>
             </g>
@@ -330,8 +330,8 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
     return (
       <div style={{ width: '100%', height: '100%', position: 'relative' }}>
         <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Red flags</text>
-          <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+          <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Red flags</text>
+          <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
           <rect x={pL} y={pT + 12} width={400 - pL - pR} height={52} fill="rgba(26,107,74,0.08)" />
           <rect x={pL} y={pT + 12} width={2.5} height={52} fill="#1a6b4a" />
           <text x={pL + 16} y={pT + 43} fontSize="12" fill="#1a6b4a" fontFamily={SANS}>No suspicious signals detected</text>
@@ -347,8 +347,8 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Red flags</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Red flags</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {flags.map((f, i) => {
           const y = pT + i * (rowH + gap)
           const col = severityColor(f.severity)
@@ -357,7 +357,7 @@ function RedFlags({ results, aiScores, unverifiedRatio, aiAnalysisAvailable, cor
               <rect x={pL} y={y} width={400 - pL - pR} height={rowH} fill={col === '#c8472a' ? 'rgba(200,71,42,0.06)' : col === '#c8822a' ? 'rgba(200,130,42,0.06)' : 'rgba(0,0,0,0.025)'} />
               <rect x={pL} y={y} width={2.5} height={rowH} fill={col} />
               <text x={pL + 12} y={y + rowH * 0.4} fontSize="9" fontWeight="700" fill={col} fontFamily={MONO} style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{truncate(f.label, 40)}</text>
-              <text x={pL + 12} y={y + rowH * 0.4 + 14} fontSize="10" fill="#555452" fontFamily={SANS}>{truncate(f.detail, 50)}</text>
+              <text x={pL + 12} y={y + rowH * 0.4 + 14} fontSize="10" fill="#475569" fontFamily={SANS}>{truncate(f.detail, 50)}</text>
             </g>
           )
         })}
@@ -399,20 +399,20 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Corroboration profile</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Corroboration profile</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {[0.25, 0.5, 0.75, 1].map(level => (
           <polygon key={level} points={polyStr(level)} fill="none" stroke={level === 1 ? '#d4d0c8' : '#edeae3'} strokeWidth={level === 1 ? 0.75 : 0.5} />
         ))}
         {Array.from({ length: N }, (_, i) => {
           const [x, y] = pt(i, 1)
-          return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#edeae3" strokeWidth="0.5" />
+          return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#f1f5f9" strokeWidth="0.5" />
         })}
-        <polygon points={dataStr} fill="rgba(26,107,74,0.12)" stroke="#1a6b4a" strokeWidth="1.5" strokeLinejoin="round" />
+        <polygon points={dataStr} fill="rgba(30,64,175,0.12)" stroke="#1e40af" strokeWidth="1.5" strokeLinejoin="round" />
         {axes.map((a, i) => {
           const [x, y] = pt(i, a.value)
           return (
-            <circle key={i} cx={x} cy={y} r={4} fill="#1a6b4a" style={{ cursor: 'pointer' }}
+            <circle key={i} cx={x} cy={y} r={4} fill="#1e40af" style={{ cursor: 'pointer' }}
               onMouseEnter={e => show(e, [a.label, a.desc, `${Math.round(a.value * 100)}%`])}
               onMouseMove={move} onMouseLeave={hide} />
           )
@@ -424,8 +424,8 @@ function DiversityRadar({ results, aiScores }: { results: any[]; aiScores: { out
           const anchor = Math.abs(Math.cos(ang)) < 0.15 ? 'middle' : Math.cos(ang) > 0 ? 'start' : 'end'
           return (
             <g key={i}>
-              <text x={lx} y={ly + 4} textAnchor={anchor} fontSize="9" fill="#888680" fontFamily={MONO} style={{ textTransform: 'uppercase' }}>{a.label}</text>
-              <text x={lx} y={ly + 16} textAnchor={anchor} fontSize="9" fill="#1a6b4a" fontFamily={MONO} fontWeight="600">{Math.round(a.value * 100)}%</text>
+              <text x={lx} y={ly + 4} textAnchor={anchor} fontSize="9" fill="#64748b" fontFamily={MONO} style={{ textTransform: 'uppercase' }}>{a.label}</text>
+              <text x={lx} y={ly + 16} textAnchor={anchor} fontSize="9" fill="#1e40af" fontFamily={MONO} fontWeight="600">{Math.round(a.value * 100)}%</text>
             </g>
           )
         })}
@@ -620,11 +620,11 @@ function GeoSpreadMap({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Geographic spread</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Geographic spread</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
 
         {/* Ocean background */}
-        <rect x={mX} y={mY} width={mW} height={mH} fill="#f2efe9" />
+        <rect x={mX} y={mY} width={mW} height={mH} fill="#eef2f7" />
         {/* Graticule lines */}
         {[-60, -30, 0, 30, 60].map(lat => {
           const gy = mY + (90 - lat) * mH / 180
@@ -637,7 +637,7 @@ function GeoSpreadMap({ results }: { results: any[] }) {
         {/* Continents — scale from MAP_W×MAP_H space into mX,mY,mW,mH */}
         <g transform={`translate(${mX},${mY}) scale(${sx},${sy})`}>
           {WORLD_CONTINENTS.map(c => (
-            <path key={c.id} d={c.d} fill="#ddd9d0" stroke="#c8c4bc" strokeWidth={1 / Math.min(sx, sy)} />
+            <path key={c.id} d={c.d} fill="#c8d8e8" stroke="#a8c0d8" strokeWidth={1 / Math.min(sx, sy)} />
           ))}
         </g>
         {/* Source dots by language */}
@@ -670,10 +670,10 @@ function GeoSpreadMap({ results }: { results: any[] }) {
         })}
 
         {/* Lang count label below map */}
-        <text x="20" y={mY + mH + 18} fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>
+        <text x="20" y={mY + mH + 18} fontSize="9" fontFamily={MONO} fill="#64748b" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>
           {`${langCount} language${langCount !== 1 ? 's' : ''} detected`}
         </text>
-        <text x="20" y={mY + mH + 32} fontSize="8" fontFamily={MONO} fill="#b0aca4">
+        <text x="20" y={mY + mH + 32} fontSize="8" fontFamily={MONO} fill="#94a3b8">
           Dot size = number of sources · position approximated from language
         </text>
       </svg>
@@ -712,8 +712,8 @@ function ReachByType({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Audience reach</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Audience reach</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {entries.map(([type, stats], i) => {
           const y = pT + i * rowH
           const bw = Math.max((stats.views / maxViews) * barW, stats.views > 0 ? 2 : 0)
@@ -724,12 +724,12 @@ function ReachByType({ results }: { results: any[] }) {
               onMouseEnter={e => show(e, [label, `${stats.count} source${stats.count !== 1 ? 's' : ''}`, `${fmtV(stats.views)} total views`])}
               onMouseMove={move} onMouseLeave={hide}
             >
-              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#f1f5f9" strokeWidth="0.5" />
               <circle cx={22} cy={y + rowH / 2} r={4} fill={color} />
               <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="8" fill="#0f0f0e" fontFamily={MONO}
                 style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</text>
-              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{stats.count} src</text>
-              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f0ede6" />
+              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>{stats.count} src</text>
+              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f1f5f9" />
               <rect x={pL} y={y + rowH / 2 - 8} width={bw} height={16} fill={color} opacity={0.82} />
               <text x={barR + 8} y={y + rowH / 2 + 4} fontSize="11" fontWeight="700" fill={color} fontFamily={MONO}>{fmtV(stats.views)}</text>
             </g>
@@ -775,8 +775,8 @@ function LangDistribution({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Language spread</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Language spread</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
         {entries.map(([lang, count], i) => {
           const y = pT + i * rowH
           const bw = Math.max((count / maxCount) * barW, 2)
@@ -786,13 +786,13 @@ function LangDistribution({ results }: { results: any[] }) {
               onMouseEnter={e => show(e, [LANG_NAMES[lang] ?? lang.toUpperCase(), `${count} source${count !== 1 ? 's' : ''}`, `${pct}% of total`])}
               onMouseMove={move} onMouseLeave={hide}
             >
-              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#edeae3" strokeWidth="0.5" />
+              <line x1="20" y1={y + rowH} x2="380" y2={y + rowH} stroke="#f1f5f9" strokeWidth="0.5" />
               <text x={pL - 8} y={y + rowH / 2 - 4} textAnchor="end" fontSize="8" fill="#0f0f0e" fontFamily={MONO}
                 style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{LANG_NAMES[lang] ?? lang.toUpperCase()}</text>
-              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#888680" fontFamily={MONO}>{lang.toUpperCase()} · {pct}%</text>
-              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f0ede6" />
-              <rect x={pL} y={y + rowH / 2 - 8} width={bw} height={16} fill="#0f0f0e" opacity={0.75} />
-              <text x={barR + 8} y={y + rowH / 2 + 4} fontSize="11" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{count}</text>
+              <text x={pL - 8} y={y + rowH / 2 + 8} textAnchor="end" fontSize="8" fill="#64748b" fontFamily={MONO}>{lang.toUpperCase()} · {pct}%</text>
+              <rect x={pL} y={y + rowH / 2 - 8} width={barW} height={16} fill="#f1f5f9" />
+              <rect x={pL} y={y + rowH / 2 - 8} width={bw} height={16} fill="#1e40af" opacity={0.8} />
+              <text x={barR + 8} y={y + rowH / 2 + 4} fontSize="11" fontWeight="700" fill="#1e40af" fontFamily={MONO}>{count}</text>
             </g>
           )
         })}
@@ -852,12 +852,12 @@ function UploadClock({ results }: { results: any[] }) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <text x="20" y="20" fontSize="9" fontFamily={MONO} fill="#888680" letterSpacing="0.12em" style={{ textTransform: 'uppercase' }}>Upload clock</text>
-        <line x1="20" y1="30" x2="380" y2="30" stroke="#d4d0c8" strokeWidth="0.75" />
+        <text x="20" y="22" fontSize="10" fontFamily={MONO} fontWeight="600" fill="#1e293b" letterSpacing="0.10em" style={{ textTransform: 'uppercase' }}>Upload clock</text>
+        <line x1="20" y1="32" x2="380" y2="32" stroke="#e2e8f0" strokeWidth="1" />
 
         {/* Inner/outer guide circles */}
-        <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#edeae3" strokeWidth="0.75" />
-        <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke="#edeae3" strokeWidth="0.5" strokeDasharray="2,4" />
+        <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke="#f1f5f9" strokeWidth="0.75" />
+        <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke="#f1f5f9" strokeWidth="0.5" strokeDasharray="2,4" />
 
         {/* Hour arcs */}
         {Array.from({ length: 24 }, (_, h) => {
@@ -865,8 +865,8 @@ function UploadClock({ results }: { results: any[] }) {
           if (!path) return null
           return (
             <path key={h} d={path}
-              fill={counts[h] === maxCount ? '#0f0f0e' : '#3a3a38'}
-              opacity={0.55 + (counts[h] / maxCount) * 0.45}
+              fill={counts[h] === maxCount ? '#1e40af' : '#3b82f6'}
+              opacity={0.45 + (counts[h] / maxCount) * 0.55}
               style={{ cursor: 'pointer' }}
               onMouseEnter={e => show(e, [
                 `${String(h).padStart(2, '0')}:00 UTC`,
@@ -884,17 +884,17 @@ function UploadClock({ results }: { results: any[] }) {
           const ang = hourAngle(h)
           const lx = CX + Math.cos(ang) * (R_OUT + 16)
           const ly = CY + Math.sin(ang) * (R_OUT + 16)
-          return <text key={h} x={lx} y={ly + 4} textAnchor="middle" fontSize="9" fill="#888680" fontFamily={MONO}>{h}h</text>
+          return <text key={h} x={lx} y={ly + 4} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily={MONO}>{h}h</text>
         })}
 
         {/* Center: active hours count */}
-        <text x={CX} y={CY - 6} textAnchor="middle" fontSize="22" fontWeight="700" fill="#0f0f0e" fontFamily={MONO}>{activeHours}</text>
-        <text x={CX} y={CY + 10} textAnchor="middle" fontSize="8" fill="#888680" fontFamily={MONO} letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>hrs active</text>
+        <text x={CX} y={CY - 6} textAnchor="middle" fontSize="22" fontWeight="700" fill="#1e40af" fontFamily={MONO}>{activeHours}</text>
+        <text x={CX} y={CY + 10} textAnchor="middle" fontSize="8" fill="#64748b" fontFamily={MONO} letterSpacing="0.08em" style={{ textTransform: 'uppercase' }}>hrs active</text>
 
         {/* Stats row at bottom */}
-        <line x1="20" y1="366" x2="380" y2="366" stroke="#edeae3" strokeWidth="0.5" />
-        <text x="20" y="382" fontSize="8" fontFamily={MONO} fill="#888680" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>{spreadLabel}</text>
-        <text x="380" y="382" textAnchor="end" fontSize="8" fontFamily={MONO} fill="#b0aca4">Peak {String(peakHour).padStart(2,'0')}:00 UTC · {maxCount} src</text>
+        <line x1="20" y1="366" x2="380" y2="366" stroke="#f1f5f9" strokeWidth="0.5" />
+        <text x="20" y="382" fontSize="8" fontFamily={MONO} fill="#64748b" letterSpacing="0.06em" style={{ textTransform: 'uppercase' }}>{spreadLabel}</text>
+        <text x="380" y="382" textAnchor="end" fontSize="8" fontFamily={MONO} fill="#94a3b8">Peak {String(peakHour).padStart(2,'0')}:00 UTC · {maxCount} src</text>
       </svg>
       <ChartTooltip tip={tip} />
     </div>
@@ -1242,10 +1242,10 @@ export default function Home() {
   const hasVisualScores = results.some(r => r.visualScore !== null && (r.platform ?? 'youtube') === 'youtube')
 
   // Card wrapper for dashboard grid cells
-  const C = ({ children, span = 6, bg = '#ffffff', accent, style, name }: { children: React.ReactNode; span?: number; bg?: string; accent?: string; style?: React.CSSProperties; name?: string }) => {
+  const C = ({ children, span = 6, bg = '#ffffff', style, name }: { children: React.ReactNode; span?: number; bg?: string; style?: React.CSSProperties; name?: string }) => {
     const cellRef = useRef<HTMLDivElement>(null)
     return (
-      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, aspectRatio: '1', position: 'relative', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box', borderTop: accent ? `4px solid ${accent}` : undefined, ...style }}>
+      <div ref={cellRef} data-chart-name={name} style={{ gridColumn: isMobile ? '1 / -1' : `span ${span}`, background: bg, aspectRatio: '1', position: 'relative', overflow: 'hidden', minWidth: 0, ...style }}>
         {children}
       </div>
     )
@@ -1367,22 +1367,22 @@ export default function Home() {
 
           {results.length > 0 ? (
             <MobileCtx.Provider value={isMobile}>
-            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '3px', background: '#0f0f0e' }}>
+            <div ref={chartsRef} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: '#cbd5e1' }}>
 
               {/* Row 1: buildup | profile | clock */}
-              <C span={hasUploadClock ? 1 : 2} name="corroboration-buildup" accent="#1a6b4a"><CorroborationBuildup results={results} /></C>
-              <C span={1} name="corroboration-profile" accent="#3a5fa8"><DiversityRadar results={results} aiScores={aiScores} /></C>
-              {hasUploadClock && <C span={1} name="upload-clock" accent="#7a3a9a"><UploadClock results={results} /></C>}
+              <C span={hasUploadClock ? 1 : 2} name="corroboration-buildup"><CorroborationBuildup results={results} /></C>
+              <C span={1} name="corroboration-profile"><DiversityRadar results={results} aiScores={aiScores} /></C>
+              {hasUploadClock && <C span={1} name="upload-clock"><UploadClock results={results} /></C>}
 
               {/* Row 2: swim lanes | waterfall | red flags */}
-              <C span={1} name="swim-lanes" accent="#b87a00"><SwimLanes results={results} /></C>
-              <C span={1} name="score-waterfall" accent="#555452"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
-              <C span={1} name="red-flags" accent="#c8472a"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
+              <C span={1} name="swim-lanes"><SwimLanes results={results} /></C>
+              <C span={1} name="score-waterfall"><ScoreWaterfall results={results} aiScores={aiScores} corroborationScore={corroborationScore} /></C>
+              <C span={1} name="red-flags"><RedFlags results={results} aiScores={aiScores} unverifiedRatio={unverifiedRatio} aiAnalysisAvailable={aiAnalysisAvailable} corroborationScore={corroborationScore} /></C>
 
               {/* Row 3: geo spread | audience reach | language spread */}
-              <C span={1} name="geo-spread" accent="#1a4a8a"><GeoSpreadMap results={results} /></C>
-              <C span={1} name="audience-reach" accent="#5a7a5a"><ReachByType results={results} /></C>
-              <C span={1} name="lang-distribution" accent="#8a3a5a"><LangDistribution results={results} /></C>
+              <C span={1} name="geo-spread"><GeoSpreadMap results={results} /></C>
+              <C span={1} name="audience-reach"><ReachByType results={results} /></C>
+              <C span={1} name="lang-distribution"><LangDistribution results={results} /></C>
 
             </div>
             </MobileCtx.Provider>
